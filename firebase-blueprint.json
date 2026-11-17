@@ -1,0 +1,605 @@
+{
+  "entities": {
+    "BusinessProfile": {
+      "title": "BusinessProfile",
+      "description": "Esnaf işletme profil bilgileri (GİB şifresi burada saklanmaz).",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "taxId": {
+          "type": "string",
+          "maxLength": 11
+        },
+        "taxOffice": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "address": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "city": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "district": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "phone": {
+          "type": "string",
+          "maxLength": 24
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "iban": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "defaultInvoiceNote": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "defaultGibMode": {
+          "type": "string",
+          "enum": ["live", "test"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "title", "taxId", "defaultGibMode", "createdAt", "updatedAt"]
+    },
+    "Account": {
+      "title": "Account",
+      "description": "Müşteri ve tedarikçi cari hesap kartı.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "taxId": {
+          "type": "string",
+          "maxLength": 11
+        },
+        "taxOffice": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "phone": {
+          "type": "string",
+          "maxLength": 24
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "address": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "city": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "district": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "accountType": {
+          "type": "string",
+          "enum": ["customer", "supplier", "both"]
+        },
+        "balance": {
+          "type": "number"
+        },
+        "currency": {
+          "type": "string",
+          "enum": ["TRY", "USD", "EUR", "GBP"]
+        },
+        "usdBalance": {
+          "type": "number"
+        },
+        "eurBalance": {
+          "type": "number"
+        },
+        "gbpBalance": {
+          "type": "number"
+        },
+        "nextDueDate": {
+          "type": "string",
+          "maxLength": 20
+        },
+        "paymentTermDays": {
+          "type": "number"
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "name", "accountType", "balance", "createdAt", "updatedAt"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Gelir, gider, tahsilat, ödeme ve dövizli satış hareketi.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["income", "expense"]
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "amount": {
+          "type": "number"
+        },
+        "currency": {
+          "type": "string",
+          "enum": ["TRY", "USD", "EUR", "GBP"]
+        },
+        "originalAmount": {
+          "type": "number"
+        },
+        "exchangeRate": {
+          "type": "number"
+        },
+        "entryKind": {
+          "type": "string",
+          "enum": ["ledger", "sale", "collection", "payment", "check_note"]
+        },
+        "vatRate": {
+          "type": "number"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "date": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 20
+        },
+        "paymentMethod": {
+          "type": "string",
+          "enum": ["cash", "bank", "pos", "transfer"]
+        },
+        "accountId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "accountName": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "invoiceId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "affectsBalance": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "type", "category", "amount", "vatRate", "date", "paymentMethod", "affectsBalance", "createdAt", "updatedAt"]
+    },
+    "SavedItem": {
+      "title": "SavedItem",
+      "description": "Kullanıcının isteğe bağlı kaydettiği sık kullanılan fatura kalemi (stok takibi içermez).",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 180
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 30
+        },
+        "unitPrice": {
+          "type": "number"
+        },
+        "vatRate": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "name", "unit", "unitPrice", "vatRate", "createdAt", "updatedAt"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Oluşturulan veya SMS ile onaylanan e-Arşiv fatura arşivi kaydı.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ettn": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "invoiceNo": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "invoiceDate": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 20
+        },
+        "invoiceTime": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 12
+        },
+        "invoiceType": {
+          "type": "string",
+          "enum": ["SATIS", "IADE"]
+        },
+        "gibMode": {
+          "type": "string",
+          "enum": ["live", "test"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["draft", "approved", "cancelled"]
+        },
+        "currency": {
+          "type": "string",
+          "enum": ["TRY", "USD", "EUR", "GBP"]
+        },
+        "exchangeRate": {
+          "type": "number"
+        },
+        "sellerTitle": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "sellerTaxId": {
+          "type": "string",
+          "maxLength": 11
+        },
+        "sellerTaxOffice": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "sellerAddress": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "recipientAccountId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "recipientName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "recipientTaxId": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 11
+        },
+        "recipientTaxOffice": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "recipientAddress": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "recipientCity": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "recipientDistrict": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "items": {
+          "type": "array",
+          "description": "Fatura kalemleri (en fazla 50 kalem)"
+        },
+        "subtotal": {
+          "type": "number"
+        },
+        "vatTotal": {
+          "type": "number"
+        },
+        "grandTotal": {
+          "type": "number"
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "smsApprovedAt": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "reflectedToLedger": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerId",
+        "ettn",
+        "invoiceNo",
+        "invoiceDate",
+        "invoiceTime",
+        "invoiceType",
+        "gibMode",
+        "status",
+        "recipientName",
+        "recipientTaxId",
+        "items",
+        "subtotal",
+        "vatTotal",
+        "grandTotal",
+        "reflectedToLedger",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "GibCredential": {
+      "title": "GibCredential",
+      "description": "Kullanıcının AES-256-GCM ile şifrelenmiş GİB e-Arşiv giriş bilgileri.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "userCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "encryptedSecret": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["live", "test"]
+        },
+        "autoConnect": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "userCode", "encryptedSecret", "mode", "autoConnect", "createdAt", "updatedAt"]
+    },
+    "ExpenseCategory": {
+      "title": "ExpenseCategory",
+      "description": "Kullanıcının Ayarlar sayfasından eklediği özel gider kalemi.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "name", "createdAt", "updatedAt"]
+    },
+    "CheckNote": {
+      "title": "CheckNote",
+      "description": "Vadesi takip edilen alınan veya verilen çek ve senet kayıtları.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["cek", "senet"]
+        },
+        "direction": {
+          "type": "string",
+          "enum": ["receivable", "payable"]
+        },
+        "documentNo": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "bankOrIssuer": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "accountId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "accountName": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "amount": {
+          "type": "number"
+        },
+        "currency": {
+          "type": "string",
+          "enum": ["TRY", "USD", "EUR", "GBP"]
+        },
+        "exchangeRate": {
+          "type": "number"
+        },
+        "amountTry": {
+          "type": "number"
+        },
+        "issueDate": {
+          "type": "string",
+          "maxLength": 20
+        },
+        "dueDate": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 20
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "collected", "paid", "bounced"]
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerId",
+        "kind",
+        "direction",
+        "bankOrIssuer",
+        "amount",
+        "currency",
+        "exchangeRate",
+        "amountTry",
+        "dueDate",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/businessProfiles/{profileId}": {
+      "schema": { "$ref": "#/entities/BusinessProfile" },
+      "description": "Kullanıcının işletme profil bilgileri (profileId == request.auth.uid)."
+    },
+    "/gibCredentials/{credId}": {
+      "schema": { "$ref": "#/entities/GibCredential" },
+      "description": "Kullanıcının şifrelenmiş GİB e-Arşiv portal giriş bilgileri (credId == request.auth.uid)."
+    },
+    "/accounts/{accountId}": {
+      "schema": { "$ref": "#/entities/Account" },
+      "description": "Esnafa ait müşteri ve tedarikçi cari hesapları."
+    },
+    "/transactions/{txId}": {
+      "schema": { "$ref": "#/entities/Transaction" },
+      "description": "Esnafa ait gelir, gider, tahsilat ve ödeme kayıtları."
+    },
+    "/savedItems/{itemId}": {
+      "schema": { "$ref": "#/entities/SavedItem" },
+      "description": "Faturada isteğe bağlı kaydedilen kalem şablonları."
+    },
+    "/invoices/{invoiceId}": {
+      "schema": { "$ref": "#/entities/Invoice" },
+      "description": "Kesilen ve taslak e-Arşiv fatura arşivi."
+    },
+    "/expenseCategories/{categoryId}": {
+      "schema": { "$ref": "#/entities/ExpenseCategory" },
+      "description": "Ayarlar sayfasında tanımlanan özel gider kalemleri."
+    },
+    "/checksNotes/{itemId}": {
+      "schema": { "$ref": "#/entities/CheckNote" },
+      "description": "Vadesi takip edilen çek ve senet kayıtları."
+    }
+  }
+}

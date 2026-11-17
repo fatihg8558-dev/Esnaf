@@ -1,0 +1,6 @@
+{
+  "name": "Esnaf e-Arşiv & Finans Portalı",
+  "description": "Küçük esnaf için gelir-gider takibi, cari hesap yönetimi ve GİB e-Arşiv SMS onaylı fatura kesim portalı.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
