@@ -21,7 +21,7 @@ import type {
   GibSessionState,
 } from '../types';
 import { EXPENSE_CATEGORIES } from '../utils/formatters';
-import { gibLogin, gibLoginSaved } from '../services/gibClient';
+import { gibEncryptCredentials, gibLogin, gibLoginSaved } from '../services/gibClient';
 
 interface SettingsViewProps {
   profile: BusinessProfile | null;
@@ -99,6 +99,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingInvoiceDefaults, setSavingInvoiceDefaults] = useState(false);
 
+  const [savingCredOnly, setSavingCredOnly] = useState(false);
+
+  useEffect(() => {
+    if (savedGibCred?.userCode && !userCode) {
+      setUserCode(savedGibCred.userCode);
+    }
+  }, [savedGibCred?.userCode, userCode]);
+
   useEffect(() => {
     if (!profile) return;
     setTitle(profile.title || '');
@@ -112,6 +120,37 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setIban(profile.iban || '');
     setDefaultInvoiceNote(profile.defaultInvoiceNote || '');
   }, [profile, userEmail]);
+
+  const handleSaveCredOnly = async () => {
+    const cleanCode = userCode.trim();
+    if (!cleanCode || !password) {
+      setLoginError('Kaydetmek için GİB kullanıcı kodu ve şifre alanlarını doldurun.');
+      return;
+    }
+    setLoginError(null);
+    onClearGibAutoError();
+    setSavingCredOnly(true);
+    try {
+      const resp = await gibEncryptCredentials(cleanCode, password);
+      if (!resp.ok || !resp.encryptedSecret) {
+        setLoginError(resp.error || 'GİB bilgileri şifrelenip kaydedilemedi.');
+        return;
+      }
+      await onSaveGibCredential({
+        userCode: resp.userCode || cleanCode,
+        encryptedSecret: resp.encryptedSecret,
+        mode: 'live',
+        autoConnect: true,
+      });
+      setShowManualForm(false);
+      setConfirmingDeleteCred(false);
+      onNotify('GİB kullanıcı kodu ve şifreniz kalıcı olarak kaydedildi (silinmez).');
+    } catch (err: any) {
+      setLoginError(err?.message || 'GİB bilgileri kaydedilirken hata oluştu.');
+    } finally {
+      setSavingCredOnly(false);
+    }
+  };
 
   const handleGibLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -157,12 +196,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           mode: 'live',
           autoConnect: true,
         });
-        onNotify('GİB bilgileri şifrelenerek kaydedildi.');
+        onNotify('GİB oturumu açıldı ve şifreniz kalıcı olarak kaydedildi.');
       } else {
         onNotify('GİB canlı oturumu açıldı.');
       }
 
-      setPassword('');
       setShowManualForm(false);
       setConfirmingDeleteCred(false);
     } catch (err: any) {
@@ -589,18 +627,33 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <div className="flex items-center gap-2 text-xs text-slate-400">
                 <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
                 <span>
-                  Şifreniz AES-256 ile şifrelenerek saklanır; güvenli çıkışta silinmez.
+                  Şifreniz AES-256 ile şifrelenerek kalıcı saklanır; oturumu kapatsanız bile silinmez.
                 </span>
               </div>
 
-              <button
-                type="submit"
-                disabled={loginLoading}
-                className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs sm:text-sm font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0"
-              >
-                {loginLoading && <Loader2 className="w-4 h-4 animate-spin" />}
-                GİB Portalına Bağlan &amp; Kaydet
-              </button>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleSaveCredOnly}
+                  disabled={savingCredOnly || loginLoading}
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-100 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap"
+                >
+                  {savingCredOnly ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Save className="w-3.5 h-3.5" />
+                  )}
+                  Sadece Şifreyi Kaydet
+                </button>
+                <button
+                  type="submit"
+                  disabled={loginLoading || savingCredOnly}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs sm:text-sm font-semibold rounded-lg transition-colors whitespace-nowrap"
+                >
+                  {loginLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                  GİB Portalına Bağlan &amp; Kaydet
+                </button>
+              </div>
             </div>
           </form>
         )}

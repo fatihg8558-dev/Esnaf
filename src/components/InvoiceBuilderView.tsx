@@ -2,14 +2,19 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   BookmarkPlus,
   CheckCircle2,
+  Eye,
+  EyeOff,
   FileText,
   KeyRound,
   Loader2,
   LogOut,
   Plus,
+  Power,
   RefreshCw,
+  Save,
   Search,
   Settings,
+  ShieldCheck,
   Trash2,
 } from 'lucide-react';
 import type {
@@ -38,6 +43,8 @@ import {
 import {
   fetchExchangeRates,
   gibCreateDraftAndSendSms,
+  gibEncryptCredentials,
+  gibLogin,
   gibLoginSaved,
   gibLookupRecipient,
   gibVerifySms,
@@ -56,6 +63,9 @@ interface InvoiceBuilderViewProps {
   onClearGibAutoError: () => void;
   onResetManualLogout: () => void;
   onEnableGibAutoConnect?: () => Promise<void>;
+  onSaveGibCredential?: (
+    cred: Pick<GibCredential, 'userCode' | 'encryptedSecret' | 'mode' | 'autoConnect'>
+  ) => Promise<void>;
   onSafeGibLogout: () => Promise<void>;
   onNotify?: (msg: string) => void;
   preselectedAccount: Account | null;
@@ -105,6 +115,7 @@ export const InvoiceBuilderView: React.FC<InvoiceBuilderViewProps> = ({
   onClearGibAutoError,
   onResetManualLogout,
   onEnableGibAutoConnect,
+  onSaveGibCredential,
   onSafeGibLogout,
   onNotify,
   preselectedAccount,
@@ -120,6 +131,19 @@ export const InvoiceBuilderView: React.FC<InvoiceBuilderViewProps> = ({
   const [quickConnectLoading, setQuickConnectLoading] = useState(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [showInlineGibForm, setShowInlineGibForm] = useState(false);
+  const [inlineUserCode, setInlineUserCode] = useState(savedGibCred?.userCode || '');
+  const [inlinePassword, setInlinePassword] = useState('');
+  const [showInlinePassword, setShowInlinePassword] = useState(false);
+  const [inlineRememberCred, setInlineRememberCred] = useState(true);
+  const [inlineSaveOnlyLoading, setInlineSaveOnlyLoading] = useState(false);
+  const [inlineSuccessMsg, setInlineSuccessMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (savedGibCred?.userCode && !inlineUserCode) {
+      setInlineUserCode(savedGibCred.userCode);
+    }
+  }, [savedGibCred?.userCode]);
 
   // Invoice Form State
   const [invoiceDate, setInvoiceDate] = useState(todayISO());
@@ -295,11 +319,112 @@ export const InvoiceBuilderView: React.FC<InvoiceBuilderViewProps> = ({
         userCode: resp.userCode || savedGibCred.userCode,
         sellerInfo: resp.sellerInfo,
       });
-      onNotify?.('Kayıtlı GİB bilgileri ile oturum açıldı.');
+      setShowInlineGibForm(false);
+      onNotify?.('GİB aktif edildi · Kayıtlı bilgilerle oturum açıldı.');
     } catch (err: any) {
       setConnectError(err?.message || 'GİB bağlantı hatası.');
     } finally {
       setQuickConnectLoading(false);
+    }
+  };
+
+  const handleInlineActivateConnect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setConnectError(null);
+    setInlineSuccessMsg(null);
+    onClearGibAutoError();
+
+    if (!inlinePassword.trim() && savedGibCred) {
+      await handleQuickSavedConnect();
+      return;
+    }
+
+    if (!inlineUserCode.trim() || !inlinePassword.trim()) {
+      setConnectError('GİB kullanıcı kodu ve şifresi zorunludur.');
+      return;
+    }
+
+    setQuickConnectLoading(true);
+    try {
+      const resp = await gibLogin({
+        mode: 'live',
+        userCode: inlineUserCode.trim(),
+        password: inlinePassword,
+        rememberCredentials: inlineRememberCred,
+        profileFallback: profile
+          ? {
+              title: profile.title,
+              taxId: profile.taxId,
+              taxOffice: profile.taxOffice,
+              address: profile.address,
+              city: profile.city,
+              district: profile.district,
+            }
+          : undefined,
+      });
+
+      if (!resp.ok || !resp.sessionId) {
+        setConnectError(resp.error || 'GİB bağlantısı kurulamadı. Bilgilerinizi kontrol edin.');
+        return;
+      }
+
+      if (inlineRememberCred && resp.encryptedSecret && onSaveGibCredential) {
+        await onSaveGibCredential({
+          userCode: inlineUserCode.trim(),
+          encryptedSecret: resp.encryptedSecret,
+          mode: 'live',
+          autoConnect: true,
+        });
+      }
+
+      onResetManualLogout();
+      onGibSessionChange({
+        connected: true,
+        sessionId: resp.sessionId,
+        mode: 'live',
+        userCode: resp.userCode || inlineUserCode.trim(),
+        sellerInfo: resp.sellerInfo,
+      });
+      setShowInlineGibForm(false);
+      onNotify?.('GİB aktif edildi.');
+    } catch (err: any) {
+      setConnectError(err?.message || 'GİB bağlantı hatası.');
+    } finally {
+      setQuickConnectLoading(false);
+    }
+  };
+
+  const handleInlineSaveOnly = async () => {
+    setConnectError(null);
+    setInlineSuccessMsg(null);
+    if (!inlineUserCode.trim() || !inlinePassword.trim()) {
+      setConnectError('Şifreyi kaydetmek için GİB kullanıcı kodu ve şifresini girin.');
+      return;
+    }
+    if (!onSaveGibCredential) {
+      setConnectError('Şifre kaydetme işlevi hazır değil.');
+      return;
+    }
+
+    setInlineSaveOnlyLoading(true);
+    try {
+      const encResp = await gibEncryptCredentials(inlineUserCode.trim(), inlinePassword);
+      if (!encResp.ok || !encResp.encryptedSecret) {
+        setConnectError(encResp.error || 'Şifre şifrelenip kaydedilemedi.');
+        return;
+      }
+      await onSaveGibCredential({
+        userCode: encResp.userCode || inlineUserCode.trim(),
+        encryptedSecret: encResp.encryptedSecret,
+        mode: 'live',
+        autoConnect: true,
+      });
+      setInlineSuccessMsg('GİB kullanıcı kodu ve şifreniz kaydedildi. "GİB Aktif Et" ile hemen bağlanabilirsiniz.');
+      onNotify?.('GİB bilgileriniz kaydedildi.');
+    } catch (err: any) {
+      setConnectError(err?.message || 'Şifre kaydetme sırasında hata oluştu.');
+    } finally {
+      setInlineSaveOnlyLoading(false);
     }
   };
 
@@ -403,7 +528,7 @@ export const InvoiceBuilderView: React.FC<InvoiceBuilderViewProps> = ({
 
     if (!gibSession.connected || !gibSession.sessionId) {
       setFormError(
-        'Fatura önizlemesi ve SMS onayı için önce Ayarlar sayfasından veya yukarıdaki bağlantı çubuğundan GİB oturumu açın.'
+        'Fatura önizlemesi ve SMS onayı için yukarıdaki "GİB Aktif Et" butonundan GİB oturumunu açın.'
       );
       return;
     }
@@ -557,18 +682,23 @@ export const InvoiceBuilderView: React.FC<InvoiceBuilderViewProps> = ({
         </div>
       </div>
 
-      {/* Compact GİB Status Bar (Credentials managed in Ayarlar) */}
+      {/* GİB Aktif Et / Oturum Durum Çubuğu */}
       {gibSession.connected ? (
         <div className="bg-[#131C2E] border border-emerald-500/30 rounded-xl px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
             <div>
               <div className="text-sm font-semibold text-slate-100">
-                GİB Oturumu Aktif · <span className="text-emerald-400">Canlı GİB Portal</span>
+                GİB Aktif · <span className="text-emerald-400">Canlı GİB Portal</span>
               </div>
               <div className="text-xs text-slate-400">
                 {gibSession.sellerInfo?.title} · Kullanıcı Kodu:{' '}
                 <span className="font-mono-num text-slate-300">{gibSession.userCode}</span>
+                {savedGibCred && (
+                  <span className="text-emerald-400/90 ml-2">
+                    · Şifre kayıtlı (çıkışta silinmez)
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -585,6 +715,7 @@ export const InvoiceBuilderView: React.FC<InvoiceBuilderViewProps> = ({
               type="button"
               onClick={handleGibLogout}
               disabled={logoutLoading}
+              title="Oturumu kapatır, kayıtlı GİB şifreniz silinmez."
               className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-200 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap"
             >
               {logoutLoading ? (
@@ -592,7 +723,7 @@ export const InvoiceBuilderView: React.FC<InvoiceBuilderViewProps> = ({
               ) : (
                 <LogOut className="w-3.5 h-3.5" />
               )}
-              Güvenli Çıkış
+              GİB Pasifleştir
             </button>
           </div>
         </div>
@@ -606,43 +737,160 @@ export const InvoiceBuilderView: React.FC<InvoiceBuilderViewProps> = ({
               <div>
                 <div className="text-sm font-semibold text-slate-100">
                   {gibAutoConnecting
-                    ? 'Kayıtlı GİB hesabına bağlanılıyor...'
+                    ? 'GİB aktif ediliyor...'
                     : savedGibCred
-                    ? `Kayıtlı GİB Hesabı Hazır (${savedGibCred.userCode})`
-                    : 'GİB e-Arşiv Portal Oturumu Kapalı'}
+                    ? `GİB Hazır (${savedGibCred.userCode})`
+                    : 'GİB e-Arşiv Portal Pasif'}
                 </div>
                 <div className="text-xs text-slate-400">
                   {savedGibCred
-                    ? 'Tek tıkla bağlanabilir veya GİB bilgilerinizi Ayarlar sayfasından yönetebilirsiniz.'
-                    : 'Fatura kesmek için Ayarlar sekmesinden GİB kullanıcı kodu ve şifrenizle giriş yapın.'}
+                    ? 'Kayıtlı GİB şifreniz korunuyor. Tek tıkla GİB\'i aktif edebilirsiniz.'
+                    : 'Fatura kesmek için hemen "GİB Aktif Et" butonuna basıp şifrenizi kaydedin.'}
                 </div>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2 shrink-0">
-              {savedGibCred && (
+              {savedGibCred ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleQuickSavedConnect}
+                    disabled={quickConnectLoading || gibAutoConnecting}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-colors whitespace-nowrap"
+                  >
+                    {quickConnectLoading || gibAutoConnecting ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Power className="w-3.5 h-3.5" />
+                    )}
+                    GİB Aktif Et
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowInlineGibForm((v) => !v)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg transition-colors whitespace-nowrap"
+                  >
+                    <KeyRound className="w-3.5 h-3.5" />
+                    {showInlineGibForm ? 'Formu Gizle' : 'Şifre / Bilgi Güncelle'}
+                  </button>
+                </>
+              ) : (
                 <button
                   type="button"
-                  onClick={handleQuickSavedConnect}
-                  disabled={quickConnectLoading || gibAutoConnecting}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-colors whitespace-nowrap"
+                  onClick={() => setShowInlineGibForm((v) => !v)}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg transition-colors whitespace-nowrap"
                 >
-                  {(quickConnectLoading || gibAutoConnecting) && (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  )}
-                  Kayıtlı Bilgilerle Bağlan
+                  <Power className="w-3.5 h-3.5" />
+                  {showInlineGibForm ? 'Formu Gizle' : 'GİB Aktif Et'}
                 </button>
               )}
               <button
                 type="button"
                 onClick={onGoToSettings}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap"
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-lg transition-colors whitespace-nowrap"
               >
                 <Settings className="w-3.5 h-3.5" />
-                {savedGibCred ? 'Ayarlar' : 'GİB Ayarlarına Git'}
+                Ayarlar
               </button>
             </div>
           </div>
+
+          {showInlineGibForm && (
+            <form
+              onSubmit={handleInlineActivateConnect}
+              className="bg-[#0B1120] border border-slate-800 rounded-xl p-4 space-y-3"
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                    GİB Kullanıcı Kodu *
+                  </label>
+                  <input
+                    type="text"
+                    value={inlineUserCode}
+                    onChange={(e) => setInlineUserCode(e.target.value)}
+                    placeholder="Örn: 33108156"
+                    className="w-full px-3 py-2 bg-[#131C2E] border border-slate-700 focus:border-blue-500 focus:outline-none rounded-lg text-sm font-mono-num text-slate-100"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                    GİB Şifresi {savedGibCred ? '(Değiştirmek istemiyorsanız boş bırakabilirsiniz)' : '*'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showInlinePassword ? 'text' : 'password'}
+                      value={inlinePassword}
+                      onChange={(e) => setInlinePassword(e.target.value)}
+                      placeholder={savedGibCred ? '•••••••• (Kayıtlı şifre korunur)' : 'GİB şifreniz'}
+                      className="w-full pl-3 pr-10 py-2 bg-[#131C2E] border border-slate-700 focus:border-blue-500 focus:outline-none rounded-lg text-sm text-slate-100"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowInlinePassword((v) => !v)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 p-1"
+                      title={showInlinePassword ? 'Şifreyi Gizle' : 'Şifreyi Göster'}
+                    >
+                      {showInlinePassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                <label className="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={inlineRememberCred}
+                    onChange={(e) => setInlineRememberCred(e.target.checked)}
+                    className="rounded border-slate-600 bg-[#131C2E] text-emerald-500 focus:ring-emerald-500"
+                  />
+                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>Şifremi kalıcı olarak kaydet (oturum kapansa da silinmez)</span>
+                </label>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleInlineSaveOnly}
+                    disabled={inlineSaveOnlyLoading || quickConnectLoading}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 border border-slate-700 text-slate-100 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap"
+                  >
+                    {inlineSaveOnlyLoading ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Save className="w-3.5 h-3.5" />
+                    )}
+                    Sadece Şifreyi Kaydet
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={quickConnectLoading || inlineSaveOnlyLoading}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-colors whitespace-nowrap"
+                  >
+                    {quickConnectLoading ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Power className="w-3.5 h-3.5" />
+                    )}
+                    GİB Aktif Et &amp; Bağlan
+                  </button>
+                </div>
+              </div>
+            </form>
+          )}
+
+          {inlineSuccessMsg && (
+            <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs rounded-lg px-3.5 py-2.5">
+              {inlineSuccessMsg}
+            </div>
+          )}
 
           {(connectError || gibAutoError) && (
             <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-xs rounded-lg px-3.5 py-2.5">

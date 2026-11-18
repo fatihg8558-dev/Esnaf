@@ -20,8 +20,8 @@ function escapeHtml(text: string | undefined | null): string {
     .replace(/'/g, '&#039;');
 }
 
-export function buildDeterministicQrSvg(seedText: string, size = 84): string {
-  const grid = 25;
+export function buildDeterministicQrSvg(seedText: string, size = 148): string {
+  const grid = 33;
   let h = 2166136261;
   for (let i = 0; i < seedText.length; i++) {
     h ^= seedText.charCodeAt(i);
@@ -37,6 +37,13 @@ export function buildDeterministicQrSvg(seedText: string, size = 84): string {
     return false;
   };
 
+  const isAlign = (r: number, c: number, ar0: number, ac0: number) => {
+    const dr = r - ar0;
+    const dc = c - ac0;
+    if (dr < -2 || dr > 2 || dc < -2 || dc > 2) return false;
+    return Math.abs(dr) === 2 || Math.abs(dc) === 2 || (dr === 0 && dc === 0);
+  };
+
   const rects: string[] = [];
   const cell = size / grid;
   for (let r = 0; r < grid; r++) {
@@ -48,58 +55,60 @@ export function buildDeterministicQrSvg(seedText: string, size = 84): string {
       else if ((r === 7 && c < 8) || (c === 7 && r < 8)) dark = false;
       else if ((r === 7 && c >= grid - 8) || (c === grid - 8 && r < 8)) dark = false;
       else if ((r >= grid - 8 && c < 8) || (c === 7 && r >= grid - 8)) dark = false;
-      else if (r >= grid - 9 && r <= grid - 5 && c >= grid - 9 && c <= grid - 5) {
-        const ar = r - (grid - 9);
-        const ac = c - (grid - 9);
-        dark = ar === 0 || ar === 4 || ac === 0 || ac === 4 || (ar === 2 && ac === 2);
+      else if (r === 6 && c >= 8 && c <= grid - 9) dark = c % 2 === 0;
+      else if (c === 6 && r >= 8 && r <= grid - 9) dark = r % 2 === 0;
+      else if (Math.abs(r - (grid - 7)) <= 2 && Math.abs(c - (grid - 7)) <= 2) {
+        dark = isAlign(r, c, grid - 7, grid - 7);
       } else {
-        h ^= (r * 37 + c * 19 + 11) & 0xff;
+        h ^= (r * 41 + c * 23 + 17) & 0xff;
         h = Math.imul(h, 16777619);
         dark = ((h >>> 24) & 1) === 1;
       }
       if (dark) {
         rects.push(
           `<rect x="${(c * cell).toFixed(2)}" y="${(r * cell).toFixed(2)}" width="${(
-            cell + 0.2
-          ).toFixed(2)}" height="${(cell + 0.2).toFixed(2)}" fill="#000000"/>`
+            cell + 0.18
+          ).toFixed(2)}" height="${(cell + 0.18).toFixed(2)}" fill="#000000"/>`
         );
       }
     }
   }
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="display:block;background:#ffffff;padding:2px;">${rects.join(
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="display:block;background:#ffffff;">${rects.join(
     ''
   )}</svg>`;
 }
 
 /**
- * Official-style circular GİB / T.C. Hazine ve Maliye Bakanlığı e-Arşiv Emblem
+ * Official circular GİB / T.C. Hazine ve Maliye Bakanlığı e-Arşiv Emblem
+ * Blue outer ring with curved ministry & GİB titles + red stylized "Gi" monogram
  */
-export function buildGibEmblemSvg(size = 76): string {
-  const starPoints = Array.from({ length: 16 })
-    .map((_, i) => {
-      const angle = (i * 22.5 - 90) * (Math.PI / 180);
-      const cx = 50 + 40 * Math.cos(angle);
-      const cy = 50 + 40 * Math.sin(angle);
-      return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="1.45" fill="#ffffff"/>`;
-    })
-    .join('');
-
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 100 100" style="display:block;">
-    <circle cx="50" cy="50" r="47" fill="#c8102e" stroke="#8b0015" stroke-width="1.5"/>
-    <circle cx="50" cy="50" r="44.5" fill="none" stroke="#ffffff" stroke-width="0.9"/>
-    ${starPoints}
-    <circle cx="50" cy="50" r="34" fill="#ffffff" stroke="#c8102e" stroke-width="1.4"/>
-    <circle cx="50" cy="50" r="31.5" fill="none" stroke="#111111" stroke-width="0.7"/>
-    <!-- Stylized crescent + star at top inside crest -->
-    <circle cx="48.5" cy="28" r="5.5" fill="#c8102e"/>
-    <circle cx="50.4" cy="28" r="4.3" fill="#ffffff"/>
-    <polygon points="56,28 53.7,29.1 54.3,26.6 52.5,24.9 55,24.6 56,22.3 57,24.6 59.5,24.9 57.7,26.6 58.3,29.1" fill="#c8102e"/>
-    <!-- Official GİB Typography -->
-    <text x="50" y="51" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="900" letter-spacing="1" fill="#111111">GİB</text>
-    <line x1="25" y1="56" x2="75" y2="56" stroke="#c8102e" stroke-width="1.2"/>
-    <text x="50" y="65" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="6.4" font-weight="700" fill="#111111">GELİR İDARESİ</text>
-    <text x="50" y="73" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="6.4" font-weight="700" fill="#111111">BAŞKANLIĞI</text>
+export function buildGibEmblemSvg(size = 86): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${size}" height="${size}" viewBox="0 0 120 120" style="display:block;">
+    <defs>
+      <path id="gibTopArc" d="M 15,60 A 45,45 0 1,1 105,60" />
+      <path id="gibBotArc" d="M 11,60 A 49,49 0 1,0 109,60" />
+    </defs>
+    <!-- White base + crisp blue outer ring -->
+    <circle cx="60" cy="60" r="57" fill="#ffffff" stroke="#0d4c9c" stroke-width="1.2"/>
+    <circle cx="60" cy="60" r="47.5" fill="none" stroke="#0d4c9c" stroke-width="14.5"/>
+    <circle cx="60" cy="60" r="39.5" fill="#ffffff" stroke="#0d4c9c" stroke-width="1"/>
+    <!-- Curved white ministry & GİB titles -->
+    <text font-family="Arial, Helvetica, sans-serif" font-size="7.4" font-weight="700" fill="#ffffff" letter-spacing="0.2">
+      <textPath href="#gibTopArc" xlink:href="#gibTopArc" startOffset="50%" text-anchor="middle">T.C. Hazine ve Maliye Bakanlığı</textPath>
+    </text>
+    <text font-family="Arial, Helvetica, sans-serif" font-size="7.6" font-weight="700" fill="#ffffff" letter-spacing="0.25">
+      <textPath href="#gibBotArc" xlink:href="#gibBotArc" startOffset="50%" text-anchor="middle">Gelir İdaresi Başkanlığı</textPath>
+    </text>
+    <!-- Red stylized Gi monogram -->
+    <g fill="#e30a17">
+      <!-- Red dot of 'i' -->
+      <circle cx="77.5" cy="40" r="4.8"/>
+      <!-- Slanted 'i' stem -->
+      <path d="M 72.2 48.5 L 81.8 48.5 L 75.2 79.5 L 65.6 79.5 Z"/>
+      <!-- Stylized rounded italic 'G' -->
+      <path d="M 67.8 49.2 C 65.2 40.2 57.6 35.8 48.8 36.2 C 35.4 36.8 27.6 46.8 26.2 59.5 C 24.8 72.6 32.8 81.2 46.5 81.2 C 53.8 81.2 60.2 78.2 64.2 73.2 L 67.2 58.2 L 49.5 58.2 L 48.0 65.5 L 56.2 65.5 L 55.2 70.2 C 52.8 72.0 50.0 72.8 47.0 72.8 C 39.2 72.8 35.4 67.4 36.4 58.8 C 37.4 50.2 42.4 44.6 50.2 44.6 C 54.8 44.6 57.6 46.6 59.2 49.8 Z"/>
+    </g>
   </svg>`;
 }
 
@@ -135,6 +144,16 @@ function formatGibDashDate(isoDate?: string): string {
     return `${parts[2]}-${parts[1]}-${parts[0]}`;
   }
   return formatDateTR(isoDate).replace(/\./g, '-');
+}
+
+function formatGibShortTime(rawTime?: string): string {
+  const clean = String(rawTime || '').trim();
+  const match = clean.match(/^(\d{2}:\d{2})/);
+  return match ? match[1] : '00:00';
+}
+
+function formatGibQty(qty: number): string {
+  return Number.isInteger(qty) ? String(qty) : formatNumberTR(qty, 2);
 }
 
 function formatGibAmount(value: number, currency: CurrencyCode): string {
@@ -259,6 +278,8 @@ export async function downloadGibInvoicePdf(
     address?: string;
     city?: string;
     district?: string;
+    phone?: string;
+    email?: string;
   },
   options?: {
     officialHtml?: string;
@@ -275,10 +296,19 @@ export async function downloadGibInvoicePdf(
   const currency: CurrencyCode = invoice.currency || 'TRY';
   const exchangeRate = Number(invoice.exchangeRate) || 1;
   const sellerTitle = invoice.sellerTitle || sellerFallback?.title || 'İşletme Unvanı';
-  const sellerTaxId = invoice.sellerTaxId || sellerFallback?.taxId || '-';
+  const sellerTaxId = String(invoice.sellerTaxId || sellerFallback?.taxId || '-').trim();
+  const sellerTaxLabel = sellerTaxId.replace(/\D/g, '').length === 11 ? 'TCKN' : 'VKN';
   const sellerTaxOffice = invoice.sellerTaxOffice || sellerFallback?.taxOffice || '-';
   const sellerAddress = invoice.sellerAddress || sellerFallback?.address || '-';
-  const sellerLoc = [sellerFallback?.district, sellerFallback?.city].filter(Boolean).join(' / ');
+  const sellerLoc = [sellerFallback?.district, sellerFallback?.city, 'Türkiye']
+    .filter(Boolean)
+    .join('/ ');
+
+  const cleanRecipientTax = String(invoice.recipientTaxId || '').trim();
+  const recipientTaxLabel = cleanRecipientTax.replace(/\D/g, '').length === 11 ? 'TCKN' : 'VKN';
+  const recipientLoc = [invoice.recipientDistrict, invoice.recipientCity]
+    .filter(Boolean)
+    .join('/ ');
 
   const vatBreakdown = invoice.items.reduce<Record<number, { base: number; vat: number }>>(
     (acc, item) => {
@@ -293,54 +323,73 @@ export async function downloadGibInvoicePdf(
 
   const qrSvg = buildDeterministicQrSvg(
     `${invoice.ettn}|${invoice.invoiceNo}|${invoice.grandTotal}|${currency}`,
-    82
+    144
   );
-  const emblemSvg = buildGibEmblemSvg(76);
+  const emblemSvg = buildGibEmblemSvg(86);
   const tlEquivalent =
     currency !== 'TRY' && exchangeRate > 0
       ? Math.round(invoice.grandTotal * exchangeRate * 100) / 100
       : null;
 
   const gibDate = formatGibDashDate(invoice.invoiceDate);
-  const gibTime = escapeHtml(invoice.invoiceTime || '00:00:00');
+  const gibShortTime = formatGibShortTime(invoice.invoiceTime);
   const invoiceTypeCode = invoice.invoiceType === 'IADE' ? 'IADE' : 'SATIS';
 
   const itemRows = invoice.items
     .map(
       (item, idx) => `
       <tr>
-        <td style="border:1px solid #000000;padding:4px 5px;text-align:center;">${idx + 1}</td>
-        <td style="border:1px solid #000000;padding:4px 6px;text-align:left;color:#000000;">${escapeHtml(
+        <td style="border:1px solid #000000;padding:3px 4px;text-align:left;">${idx + 1}</td>
+        <td style="border:1px solid #000000;padding:3px 5px;text-align:left;color:#000000;">${escapeHtml(
           item.name
         )}</td>
-        <td style="border:1px solid #000000;padding:4px 5px;text-align:right;white-space:nowrap;">${formatNumberTR(
-          item.quantity,
-          2
+        <td style="border:1px solid #000000;padding:3px 4px;text-align:right;white-space:nowrap;">${formatGibQty(
+          item.quantity
         )} ${escapeHtml(item.unit)}</td>
-        <td style="border:1px solid #000000;padding:4px 5px;text-align:right;white-space:nowrap;">${formatGibAmount(
+        <td style="border:1px solid #000000;padding:3px 4px;text-align:right;white-space:nowrap;">${formatGibAmount(
           item.unitPrice,
           currency
         )}</td>
-        <td style="border:1px solid #000000;padding:4px 5px;text-align:right;white-space:nowrap;">%0,00</td>
-        <td style="border:1px solid #000000;padding:4px 5px;text-align:right;white-space:nowrap;">${formatGibAmount(
+        <td style="border:1px solid #000000;padding:3px 4px;text-align:right;white-space:nowrap;">%0,00</td>
+        <td style="border:1px solid #000000;padding:3px 4px;text-align:right;white-space:nowrap;">${formatGibAmount(
           0,
           currency
         )}</td>
-        <td style="border:1px solid #000000;padding:4px 5px;text-align:right;white-space:nowrap;">%${
-          item.vatRate
-        }</td>
-        <td style="border:1px solid #000000;padding:4px 5px;text-align:right;white-space:nowrap;">${formatGibAmount(
+        <td style="border:1px solid #000000;padding:3px 4px;text-align:center;white-space:nowrap;">İskonto -</td>
+        <td style="border:1px solid #000000;padding:3px 4px;text-align:right;white-space:nowrap;">%${formatNumberTR(
+          item.vatRate,
+          2
+        )}</td>
+        <td style="border:1px solid #000000;padding:3px 4px;text-align:right;white-space:nowrap;">${formatGibAmount(
           item.lineVat,
           currency
         )}</td>
-        <td style="border:1px solid #000000;padding:4px 5px;text-align:right;white-space:nowrap;">${formatGibAmount(
-          0,
-          currency
-        )}</td>
-        <td style="border:1px solid #000000;padding:4px 6px;text-align:right;font-weight:700;white-space:nowrap;">${formatGibAmount(
+        <td style="border:1px solid #000000;padding:3px 4px;text-align:right;"></td>
+        <td style="border:1px solid #000000;padding:3px 5px;text-align:right;white-space:nowrap;">${formatGibAmount(
           item.lineSubtotal,
           currency
         )}</td>
+      </tr>
+    `
+    )
+    .join('');
+
+  const fillerCount = Math.max(0, 15 - invoice.items.length);
+  const fillerRows = Array.from({ length: fillerCount })
+    .map(
+      () => `
+      <tr>
+        <td style="border:1px solid #000000;height:14px;padding:1px 4px;">&nbsp;</td>
+        <td style="border:1px solid #000000;height:14px;padding:1px 4px;">&nbsp;</td>
+        <td style="border:1px solid #000000;height:14px;padding:1px 4px;">&nbsp;</td>
+        <td style="border:1px solid #000000;height:14px;padding:1px 4px;">&nbsp;</td>
+        <td style="border:1px solid #000000;height:14px;padding:1px 4px;">&nbsp;</td>
+        <td style="border:1px solid #000000;height:14px;padding:1px 4px;">&nbsp;</td>
+        <td style="border:1px solid #000000;height:14px;padding:1px 4px;">&nbsp;</td>
+        <td style="border:1px solid #000000;height:14px;padding:1px 4px;">&nbsp;</td>
+        <td style="border:1px solid #000000;height:14px;padding:1px 4px;">&nbsp;</td>
+        <td style="border:1px solid #000000;height:14px;padding:1px 4px;">&nbsp;</td>
+        <td style="border:1px solid #000000;height:14px;padding:1px 4px;">&nbsp;</td>
       </tr>
     `
     )
@@ -350,10 +399,10 @@ export async function downloadGibInvoicePdf(
     .map(
       ([rate, vals]) => `
       <tr>
-        <td style="border:1px solid #000000;padding:4px 7px;text-align:left;font-weight:700;">Hesaplanan KDV(%${escapeHtml(
+        <td style="border:1px solid #000000;padding:3px 7px;text-align:right;font-weight:700;">Hesaplanan KDV(%${escapeHtml(
           rate
         )})</td>
-        <td style="border:1px solid #000000;padding:4px 7px;text-align:right;white-space:nowrap;">${formatGibAmount(
+        <td style="border:1px solid #000000;padding:3px 7px;text-align:right;white-space:nowrap;">${formatGibAmount(
           vals.vat,
           currency
         )}</td>
@@ -366,176 +415,162 @@ export async function downloadGibInvoicePdf(
   const isCancelled = invoice.status === 'cancelled';
 
   const html = `
-    <div style="padding:26px 30px;background:#ffffff;color:#000000;font-family:Arial,Helvetica,sans-serif;font-size:10px;line-height:1.38;">
+    <div style="padding:22px 26px;background:#ffffff;color:#000000;font-family:Arial,Helvetica,sans-serif;font-size:10px;line-height:1.35;">
       <!-- Top 3-Column Official GİB e-Arşiv XSLT Header -->
       <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
         <tr>
-          <!-- Left Column: Seller + SAYIN (Recipient) -->
+          <!-- Left Column: Seller + SAYIN + ETTN -->
           <td style="width:42%;vertical-align:top;padding-right:10px;">
-            <div style="border-top:2px solid #000000;border-bottom:2px solid #000000;padding:7px 2px;">
-              <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#000000;margin-bottom:3px;">${escapeHtml(
+            <div style="border-top:2.5px solid #000000;border-bottom:2.5px solid #000000;padding:6px 2px;font-size:9.5px;color:#222222;">
+              <div style="font-size:10px;text-transform:uppercase;color:#111111;margin-bottom:2px;">${escapeHtml(
                 sellerTitle
               )}</div>
-              <div style="color:#000000;">${escapeHtml(sellerAddress)}</div>
-              ${sellerLoc ? `<div style="color:#000000;">${escapeHtml(sellerLoc)}</div>` : ''}
-              <div style="color:#000000;margin-top:2px;">Vergi Dairesi: ${escapeHtml(
-                sellerTaxOffice
-              )}</div>
-              <div style="color:#000000;margin-top:1px;">VKN/TCKN: ${escapeHtml(
-                sellerTaxId
-              )}</div>
+              <div>${escapeHtml(sellerAddress)}</div>
+              ${sellerLoc ? `<div>${escapeHtml(sellerLoc)}</div>` : ''}
+              <div>Tel: ${escapeHtml(sellerFallback?.phone || '')} Fax:</div>
+              <div>Web Sitesi:</div>
+              <div>E-Posta: ${escapeHtml(sellerFallback?.email || '')}</div>
+              <div>Vergi Dairesi: ${escapeHtml(sellerTaxOffice)}</div>
+              <div>${sellerTaxLabel}: ${escapeHtml(sellerTaxId)}</div>
             </div>
 
             <div style="height:24px;"></div>
 
-            <div style="border-top:2px solid #000000;border-bottom:2px solid #000000;padding:7px 2px;">
-              <div style="font-size:10.5px;font-weight:700;color:#000000;margin-bottom:3px;">SAYIN</div>
-              <div style="font-size:10.5px;font-weight:700;color:#000000;margin-bottom:2px;">${escapeHtml(
-                invoice.recipientName
-              )}</div>
+            <div style="border-top:2.5px solid #000000;border-bottom:2.5px solid #000000;padding:6px 2px;font-size:9.5px;color:#222222;">
+              <div style="font-size:10px;font-weight:700;color:#000000;margin-bottom:2px;">SAYIN</div>
+              <div style="color:#111111;">${escapeHtml(invoice.recipientName)}</div>
               ${
                 invoice.recipientAddress
-                  ? `<div style="color:#000000;">${escapeHtml(invoice.recipientAddress)}</div>`
+                  ? `<div>${escapeHtml(invoice.recipientAddress)}</div>`
                   : ''
               }
               ${
-                invoice.recipientDistrict || invoice.recipientCity
-                  ? `<div style="color:#000000;">${escapeHtml(
-                      [invoice.recipientDistrict, invoice.recipientCity].filter(Boolean).join(' / ')
-                    )}</div>`
+                recipientLoc
+                  ? `<div>${escapeHtml(recipientLoc)} Türkiye</div>`
                   : ''
               }
-              <div style="color:#000000;margin-top:2px;">Vergi Dairesi: ${escapeHtml(
-                invoice.recipientTaxOffice || '-'
-              )}</div>
-              <div style="color:#000000;margin-top:1px;">VKN/TCKN: ${escapeHtml(
-                invoice.recipientTaxId
-              )}</div>
+              <div>Web Sitesi:</div>
+              <div>E-Posta:</div>
+              <div>Tel: Fax:</div>
+              <div>${recipientTaxLabel}: ${escapeHtml(cleanRecipientTax)}</div>
             </div>
+
+            <div style="margin-top:5px;font-size:9.5px;color:#222222;">
+              <strong>ETTN:</strong> ${escapeHtml(invoice.ettn)}
+            </div>
+            ${
+              currency !== 'TRY'
+                ? `<div style="margin-top:2px;font-size:9px;color:#222222;"><strong>Para Birimi:</strong> ${currency} | <strong>Kur:</strong> ${formatNumberTR(
+                    exchangeRate,
+                    4
+                  )} TL</div>`
+                : ''
+            }
           </td>
 
-          <!-- Center Column: GİB Emblem + e-ARŞİV FATURA + QR Code -->
-          <td style="width:23%;vertical-align:top;text-align:center;padding:2px 6px;">
-            <div style="display:inline-block;margin-top:2px;">${emblemSvg}</div>
-            <div style="font-size:11.5px;font-weight:700;color:#000000;margin-top:8px;letter-spacing:0.3px;">
-              e-ARŞİV FATURA
+          <!-- Center Column: Official GİB Crest + e-Arşiv Fatura -->
+          <td style="width:23%;vertical-align:top;text-align:center;padding:24px 6px 0;">
+            <div style="display:inline-block;">${emblemSvg}</div>
+            <div style="font-size:13px;font-weight:700;color:#222222;margin-top:5px;">
+              e-Arşiv Fatura
             </div>
-            <div style="margin-top:18px;display:inline-block;">${qrSvg}</div>
-            <div style="font-size:8.5px;font-weight:700;color:#000000;margin-top:4px;">
-              ${
-                isApproved
-                  ? 'e-Arşiv İmzalı'
-                  : isCancelled
-                  ? 'İPTAL EDİLMİŞTİR'
-                  : 'TASLAK / ÖN İZLEME'
-              }
-            </div>
+            ${
+              !isApproved
+                ? `<div style="font-size:8.5px;font-weight:700;color:#b91c1c;margin-top:6px;">${
+                    isCancelled ? 'İPTAL EDİLMİŞTİR' : 'TASLAK / ÖN İZLEME'
+                  }</div>`
+                : ''
+            }
           </td>
 
-          <!-- Right Column: Metadata Grid -->
+          <!-- Right Column: Top-Right Large QR Code + Bottom-Right 5-Row Metadata Grid -->
           <td style="width:35%;vertical-align:top;padding-left:8px;">
+            <div style="text-align:right;">
+              <div style="display:inline-block;">${qrSvg}</div>
+            </div>
+            <div style="height:30px;"></div>
             <table style="width:100%;border-collapse:collapse;font-size:9.5px;">
               <tr>
-                <td style="border:1px solid #000000;padding:4px 6px;font-weight:700;width:48%;background:#ffffff;">Özelleştirme No:</td>
-                <td style="border:1px solid #000000;padding:4px 6px;">TR1.2</td>
+                <td style="border:1px solid #000000;padding:3px 6px;font-weight:700;width:48%;background:#ffffff;">Özelleştirme No:</td>
+                <td style="border:1px solid #000000;padding:3px 6px;">TR1.2</td>
               </tr>
               <tr>
-                <td style="border:1px solid #000000;padding:4px 6px;font-weight:700;background:#ffffff;">Senaryo:</td>
-                <td style="border:1px solid #000000;padding:4px 6px;">EARSIVFATURA</td>
+                <td style="border:1px solid #000000;padding:3px 6px;font-weight:700;background:#ffffff;">Senaryo:</td>
+                <td style="border:1px solid #000000;padding:3px 6px;">EARSIVFATURA</td>
               </tr>
               <tr>
-                <td style="border:1px solid #000000;padding:4px 6px;font-weight:700;background:#ffffff;">Fatura Tipi:</td>
-                <td style="border:1px solid #000000;padding:4px 6px;">${invoiceTypeCode}</td>
+                <td style="border:1px solid #000000;padding:3px 6px;font-weight:700;background:#ffffff;">Fatura Tipi:</td>
+                <td style="border:1px solid #000000;padding:3px 6px;">${invoiceTypeCode}</td>
               </tr>
               <tr>
-                <td style="border:1px solid #000000;padding:4px 6px;font-weight:700;background:#ffffff;">Fatura No:</td>
-                <td style="border:1px solid #000000;padding:4px 6px;font-weight:700;">${escapeHtml(
+                <td style="border:1px solid #000000;padding:3px 6px;font-weight:700;background:#ffffff;">Fatura No:</td>
+                <td style="border:1px solid #000000;padding:3px 6px;">${escapeHtml(
                   invoice.invoiceNo
                 )}</td>
               </tr>
               <tr>
-                <td style="border:1px solid #000000;padding:4px 6px;font-weight:700;background:#ffffff;">Fatura Tarihi:</td>
-                <td style="border:1px solid #000000;padding:4px 6px;">${gibDate}</td>
-              </tr>
-              <tr>
-                <td style="border:1px solid #000000;padding:4px 6px;font-weight:700;background:#ffffff;">Düzenleme Tarihi:</td>
-                <td style="border:1px solid #000000;padding:4px 6px;">${gibDate}</td>
-              </tr>
-              <tr>
-                <td style="border:1px solid #000000;padding:4px 6px;font-weight:700;background:#ffffff;">Düzenleme Zamanı:</td>
-                <td style="border:1px solid #000000;padding:4px 6px;">${gibTime}</td>
+                <td style="border:1px solid #000000;padding:3px 6px;font-weight:700;background:#ffffff;">Fatura Tarihi:</td>
+                <td style="border:1px solid #000000;padding:3px 6px;">${gibDate} ${gibShortTime}</td>
               </tr>
             </table>
           </td>
         </tr>
       </table>
 
-      <!-- ETTN Line -->
-      <table style="width:100%;border-collapse:collapse;margin-top:12px;margin-bottom:6px;font-size:9.5px;">
-        <tr>
-          <td style="text-align:left;padding:2px 0;color:#000000;">
-            <strong>ETTN:</strong> ${escapeHtml(invoice.ettn)}
-          </td>
-          <td style="text-align:right;padding:2px 0;color:#000000;">
-            <strong>Para Birimi:</strong> ${currency}${
-              currency !== 'TRY' ? ` &nbsp;|&nbsp; <strong>Kur:</strong> ${formatNumberTR(exchangeRate, 4)} TL` : ''
-            }
-          </td>
-        </tr>
-      </table>
-
-      <!-- Official 10-Column Line Items Table -->
-      <table style="width:100%;border-collapse:collapse;font-size:9px;">
+      <!-- Official 11-Column Line Items Table (Pure White Headers + Empty Ruled Filler Rows) -->
+      <table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:8.6px;">
         <thead>
-          <tr style="background:#ededed;color:#000000;">
-            <th style="border:1px solid #000000;padding:5px 4px;text-align:center;font-weight:700;">Sıra No</th>
-            <th style="border:1px solid #000000;padding:5px 6px;text-align:left;font-weight:700;">Mal Hizmet</th>
-            <th style="border:1px solid #000000;padding:5px 4px;text-align:right;font-weight:700;">Miktar</th>
-            <th style="border:1px solid #000000;padding:5px 4px;text-align:right;font-weight:700;">Birim Fiyat</th>
-            <th style="border:1px solid #000000;padding:5px 4px;text-align:right;font-weight:700;">İskonto Oranı</th>
-            <th style="border:1px solid #000000;padding:5px 4px;text-align:right;font-weight:700;">İskonto Tutarı</th>
-            <th style="border:1px solid #000000;padding:5px 4px;text-align:right;font-weight:700;">KDV Oranı</th>
-            <th style="border:1px solid #000000;padding:5px 4px;text-align:right;font-weight:700;">KDV Tutarı</th>
-            <th style="border:1px solid #000000;padding:5px 4px;text-align:right;font-weight:700;">Diğer Vergiler</th>
-            <th style="border:1px solid #000000;padding:5px 6px;text-align:right;font-weight:700;">Mal Hizmet Tutarı</th>
+          <tr style="background:#ffffff;color:#000000;">
+            <th style="border:1px solid #000000;padding:4px 3px;text-align:center;font-weight:700;">Sıra<br/>No</th>
+            <th style="border:1px solid #000000;padding:4px 5px;text-align:center;font-weight:700;">Mal Hizmet</th>
+            <th style="border:1px solid #000000;padding:4px 4px;text-align:center;font-weight:700;">Miktar</th>
+            <th style="border:1px solid #000000;padding:4px 4px;text-align:center;font-weight:700;">Birim Fiyat</th>
+            <th style="border:1px solid #000000;padding:4px 3px;text-align:center;font-weight:700;">İskonto/<br/>Arttırım<br/>Oranı</th>
+            <th style="border:1px solid #000000;padding:4px 3px;text-align:center;font-weight:700;">İskonto/<br/>Arttırım<br/>Tutarı</th>
+            <th style="border:1px solid #000000;padding:4px 3px;text-align:center;font-weight:700;">İskonto/<br/>Arttırım<br/>Nedeni</th>
+            <th style="border:1px solid #000000;padding:4px 3px;text-align:center;font-weight:700;">KDV<br/>Oranı</th>
+            <th style="border:1px solid #000000;padding:4px 4px;text-align:center;font-weight:700;">KDV Tutarı</th>
+            <th style="border:1px solid #000000;padding:4px 4px;text-align:center;font-weight:700;">Diğer Vergiler</th>
+            <th style="border:1px solid #000000;padding:4px 4px;text-align:center;font-weight:700;">Mal<br/>Hizmet<br/>Tutarı</th>
           </tr>
         </thead>
         <tbody>
           ${itemRows}
+          ${fillerRows}
         </tbody>
       </table>
 
-      <!-- Right-Aligned Totals Table (Official White/Monochrome Grid) -->
-      <table style="width:100%;border-collapse:collapse;margin-top:8px;">
+      <!-- Right-Aligned Totals Table (Pure White, Right-Aligned Labels) -->
+      <table style="width:100%;border-collapse:collapse;margin-top:2px;">
         <tr>
-          <td style="width:54%;"></td>
-          <td style="width:46%;vertical-align:top;">
-            <table style="width:100%;border-collapse:collapse;font-size:9.5px;">
+          <td style="width:57%;"></td>
+          <td style="width:43%;vertical-align:top;">
+            <table style="width:100%;border-collapse:collapse;font-size:9px;">
               <tr>
-                <td style="border:1px solid #000000;padding:4px 7px;text-align:left;font-weight:700;">Mal Hizmet Toplam Tutarı</td>
-                <td style="border:1px solid #000000;padding:4px 7px;text-align:right;white-space:nowrap;">${formatGibAmount(
+                <td style="border:1px solid #000000;padding:3px 7px;text-align:right;font-weight:700;">Mal Hizmet Toplam Tutarı</td>
+                <td style="border:1px solid #000000;padding:3px 7px;text-align:right;white-space:nowrap;">${formatGibAmount(
                   invoice.subtotal,
                   currency
                 )}</td>
               </tr>
               <tr>
-                <td style="border:1px solid #000000;padding:4px 7px;text-align:left;font-weight:700;">Toplam İskonto</td>
-                <td style="border:1px solid #000000;padding:4px 7px;text-align:right;white-space:nowrap;">${formatGibAmount(
+                <td style="border:1px solid #000000;padding:3px 7px;text-align:right;font-weight:700;">Toplam İskonto</td>
+                <td style="border:1px solid #000000;padding:3px 7px;text-align:right;white-space:nowrap;">${formatGibAmount(
                   0,
                   currency
                 )}</td>
               </tr>
               ${vatRows}
               <tr>
-                <td style="border:1px solid #000000;padding:4px 7px;text-align:left;font-weight:700;">Vergiler Dahil Toplam Tutar</td>
-                <td style="border:1px solid #000000;padding:4px 7px;text-align:right;white-space:nowrap;">${formatGibAmount(
+                <td style="border:1px solid #000000;padding:3px 7px;text-align:right;font-weight:700;">Vergiler Dahil Toplam Tutar</td>
+                <td style="border:1px solid #000000;padding:3px 7px;text-align:right;white-space:nowrap;">${formatGibAmount(
                   invoice.grandTotal,
                   currency
                 )}</td>
               </tr>
-              <tr style="background:#f5f5f5;">
-                <td style="border:1px solid #000000;padding:5px 7px;text-align:left;font-weight:700;">Ödenecek Tutar</td>
-                <td style="border:1px solid #000000;padding:5px 7px;text-align:right;font-weight:700;white-space:nowrap;">${formatGibAmount(
+              <tr>
+                <td style="border:1px solid #000000;padding:3px 7px;text-align:right;font-weight:700;">Ödenecek Tutar</td>
+                <td style="border:1px solid #000000;padding:3px 7px;text-align:right;white-space:nowrap;">${formatGibAmount(
                   invoice.grandTotal,
                   currency
                 )}</td>
@@ -545,8 +580,8 @@ export async function downloadGibInvoicePdf(
         </tr>
       </table>
 
-      <!-- Bottom Notes Box (Full Width, Crisp Black Border) -->
-      <div style="margin-top:14px;border:1px solid #000000;padding:8px 10px;font-size:9.5px;color:#000000;line-height:1.5;">
+      <!-- Bottom Notes Box (Full Width, Crisp Black Border, Tall Box) -->
+      <div style="margin-top:12px;border:1px solid #000000;padding:8px 10px;min-height:76px;font-size:9.2px;color:#000000;line-height:1.45;box-sizing:border-box;">
         <div><strong>Not:</strong> ${escapeHtml(currencyWordsLabel(invoice.grandTotal, currency))}</div>
         ${
           tlEquivalent !== null

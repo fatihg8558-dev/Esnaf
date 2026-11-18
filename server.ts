@@ -122,7 +122,7 @@ function postFormToGib(endpoint: string, formParams: Record<string, string>): Pr
           'Referer': 'https://earsivportal.efatura.gov.tr/intragiris.html',
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
         },
-        timeout: 18000,
+        timeout: 14000,
       },
       (res) => {
         let raw = '';
@@ -521,6 +521,28 @@ async function startServer() {
       return res.status(502).json({
         ok: false,
         error: `Kayıtlı GİB giriş hatası: ${err?.message || 'Sunucuya ulaşılamadı.'}`,
+      });
+    }
+  });
+
+  // 1c. GİB Bilgilerini Doğrudan Şifreleyerek Hazırla (Bağlanmadan kaydetme desteği)
+  app.post('/api/gib/save-credentials', (req, res) => {
+    try {
+      const { userCode, password } = req.body || {};
+      const cleanCode = String(userCode || '').trim();
+      const cleanPass = String(password || '').trim();
+      if (!cleanCode || !cleanPass) {
+        return res.status(400).json({ ok: false, error: 'GİB kullanıcı kodu ve şifre zorunludur.' });
+      }
+      return res.json({
+        ok: true,
+        userCode: cleanCode,
+        encryptedSecret: encryptGibPassword(cleanPass),
+      });
+    } catch (err: any) {
+      return res.status(500).json({
+        ok: false,
+        error: err?.message || 'GİB bilgileri şifrelenemedi.',
       });
     }
   });
@@ -949,7 +971,15 @@ async function startServer() {
         });
       }
 
-      return res.json({ ok: true, html: resp.data });
+      let html = resp.data;
+      if (/<head[^>]*>/i.test(html) && !/<base\b/i.test(html)) {
+        html = html.replace(
+          /<head([^>]*)>/i,
+          '<head$1><base href="https://earsivportal.efatura.gov.tr/">'
+        );
+      }
+
+      return res.json({ ok: true, html });
     } catch (err: any) {
       return res.status(502).json({
         ok: false,
@@ -989,6 +1019,18 @@ async function startServer() {
     } catch {
       return res.json({ ok: true });
     }
+  });
+
+  // Guarantee /api/* never returns HTML error pages
+  app.all('/api/*', (_req, res) => {
+    res.status(404).json({ ok: false, error: 'İstenen API uç noktası bulunamadı.' });
+  });
+
+  app.use('/api', (err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    res.status(err?.status || 500).json({
+      ok: false,
+      error: err?.message || 'Sunucu API hatası oluştu.',
+    });
   });
 
   // Vite dev middleware or production static assets

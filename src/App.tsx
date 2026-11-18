@@ -244,7 +244,20 @@ function PortalShell() {
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (err: any) {
-      setAuthError(err?.message || 'Google ile giriş yapılamadı.');
+      const code = String(err?.code || '');
+      const msg = String(err?.message || '');
+      if (code === 'auth/unauthorized-domain' || msg.includes('unauthorized-domain')) {
+        const host = typeof window !== 'undefined' ? window.location.hostname : '';
+        setAuthError(
+          `Bu alan adı (${host}) Firebase Authentication Yetkili Alan Adları listesinde kayıtlı değil. Uygulamayı AI Studio paylaşım linkinden açın veya Firebase Console > Authentication > Settings > Authorized domains bölümüne "${host}" adresini ekleyin.`
+        );
+      } else if (code === 'auth/popup-blocked') {
+        setAuthError('Tarayıcınız giriş penceresini engelledi. Lütfen açılır pencerelere (pop-up) izin verip tekrar deneyin.');
+      } else if (code === 'auth/popup-closed-by-user') {
+        setAuthError('Google giriş penceresi tamamlanmadan kapatıldı.');
+      } else {
+        setAuthError(msg || 'Google ile giriş yapılamadı.');
+      }
     } finally {
       setAuthLoading(false);
     }
@@ -616,6 +629,9 @@ function PortalShell() {
                 if (savedGibCred && !savedGibCred.autoConnect) {
                   await updateGibAutoConnect(user.uid, true).catch(() => {});
                 }
+              }}
+              onSaveGibCredential={async (cred) => {
+                await saveGibCredential(user.uid, cred);
               }}
               onSafeGibLogout={handleGibSafeLogout}
               onNotify={showToast}
