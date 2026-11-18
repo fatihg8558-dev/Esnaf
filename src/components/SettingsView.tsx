@@ -21,7 +21,13 @@ import type {
   GibSessionState,
 } from '../types';
 import { EXPENSE_CATEGORIES } from '../utils/formatters';
-import { gibEncryptCredentials, gibLogin, gibLoginSaved } from '../services/gibClient';
+import {
+  getConfiguredApiBaseUrl,
+  gibEncryptCredentials,
+  gibLogin,
+  gibLoginSaved,
+  setConfiguredApiBaseUrl,
+} from '../services/gibClient';
 
 interface SettingsViewProps {
   profile: BusinessProfile | null;
@@ -100,6 +106,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [savingInvoiceDefaults, setSavingInvoiceDefaults] = useState(false);
 
   const [savingCredOnly, setSavingCredOnly] = useState(false);
+  const isStaticGithubPages =
+    typeof window !== 'undefined' && window.location.hostname.endsWith('github.io');
+  const [apiBaseInput, setApiBaseInput] = useState(() => getConfiguredApiBaseUrl());
 
   useEffect(() => {
     if (savedGibCred?.userCode && !userCode) {
@@ -397,6 +406,43 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {gibSession.connected ? 'Canlı Oturum Aktif' : 'Oturum Kapalı'}
           </span>
         </div>
+
+        {isStaticGithubPages && (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 space-y-3 text-xs text-amber-200">
+            <div className="font-semibold text-amber-100">
+              GitHub Pages Statik Ön Yüz Modu
+            </div>
+            <p className="text-amber-200/90 leading-relaxed">
+              GitHub Pages (github.io) arka plan sunucusu çalıştırmaz. GİB şifrenizi buradan
+              güvenle kaydedebilirsiniz; ancak canlı GİB girişi ve fatura kesimi için uygulamanın
+              paylaşılan tam yığın linkini açın veya sunucu API adresini aşağıya tanımlayın.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="url"
+                value={apiBaseInput}
+                onChange={(e) => setApiBaseInput(e.target.value)}
+                placeholder="https://...run.app (Opsiyonel Sunucu API Adresi)"
+                className="flex-1 px-3 py-2 bg-[#0B1120] border border-amber-500/30 focus:border-amber-400 focus:outline-none rounded-lg text-xs text-slate-100"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setConfiguredApiBaseUrl(apiBaseInput);
+                  setLoginError(null);
+                  onNotify(
+                    apiBaseInput.trim()
+                      ? 'Sunucu API adresi kaydedildi.'
+                      : 'Özel sunucu API adresi temizlendi.'
+                  );
+                }}
+                className="px-3.5 py-2 bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold rounded-lg whitespace-nowrap transition-colors"
+              >
+                API Adresini Kaydet
+              </button>
+            </div>
+          </div>
+        )}
 
         {gibAutoConnecting && (
           <div className="bg-blue-500/10 border border-blue-500/30 text-blue-200 text-xs rounded-lg px-4 py-3 flex items-center gap-2.5">

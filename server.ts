@@ -358,6 +358,24 @@ function fetchTcmbRates(): Promise<{
 
 async function startServer() {
   const app = express();
+  app.use('/api', (req, res, next) => {
+    const origin = String(req.headers.origin || '');
+    if (
+      origin &&
+      (/^https:\/\/[a-z0-9-]+\.github\.io$/i.test(origin) ||
+        /^https:\/\/[a-z0-9-]+\.([a-z0-9-]+\.)?run\.app$/i.test(origin) ||
+        /^http:\/\/localhost(:\d+)?$/i.test(origin))
+    ) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+    }
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(204);
+    }
+    next();
+  });
   app.use(express.json({ limit: '1mb' }));
   app.use(express.text({ type: 'text/plain', limit: '64kb' }));
 

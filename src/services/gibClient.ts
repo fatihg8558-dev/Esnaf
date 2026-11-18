@@ -105,9 +105,42 @@ async function parseApiJson<T extends { ok?: boolean; error?: string; staticHost
   }
 }
 
+const API_BASE_STORAGE_KEY = 'esnaf_api_base_url';
+
+export function getConfiguredApiBaseUrl(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    return String(window.localStorage.getItem(API_BASE_STORAGE_KEY) || '')
+      .trim()
+      .replace(/\/+$/, '');
+  } catch {
+    return '';
+  }
+}
+
+export function setConfiguredApiBaseUrl(url: string): void {
+  if (typeof window === 'undefined') return;
+  const clean = String(url || '').trim().replace(/\/+$/, '');
+  try {
+    if (!clean) {
+      window.localStorage.removeItem(API_BASE_STORAGE_KEY);
+    } else {
+      window.localStorage.setItem(API_BASE_STORAGE_KEY, clean);
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function resolveApiUrl(path: string): string {
+  const base = getConfiguredApiBaseUrl();
+  if (!base) return path;
+  return `${base}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
 export async function gibLogin(payload: GibLoginPayload): Promise<GibLoginResponse> {
   try {
-    const res = await fetch('/api/gib/login', {
+    const res = await fetch(resolveApiUrl('/api/gib/login'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -132,7 +165,7 @@ export async function gibEncryptCredentials(
   }
 
   try {
-    const res = await fetch('/api/gib/save-credentials', {
+    const res = await fetch(resolveApiUrl('/api/gib/save-credentials'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userCode: cleanCode, password: cleanPass }),
@@ -167,24 +200,32 @@ export async function gibLoginSaved(payload: {
   encryptedSecret: string;
   profileFallback?: GibLoginPayload['profileFallback'];
 }): Promise<GibLoginResponse> {
-  const res = await fetch('/api/gib/login-saved', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  return parseApiJson<GibLoginResponse>(res, 'Kayıtlı GİB oturumu açılamadı.');
+  try {
+    const res = await fetch(resolveApiUrl('/api/gib/login-saved'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return parseApiJson<GibLoginResponse>(res, 'Kayıtlı GİB oturumu açılamadı.');
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'Sunucuya bağlanılamadı.' };
+  }
 }
 
 export async function gibLookupRecipient(
   sessionId: string,
   taxId: string
 ): Promise<{ ok: boolean; recipient?: { name: string; taxOffice: string }; error?: string }> {
-  const res = await fetch('/api/gib/recipient', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId, taxId }),
-  });
-  return parseApiJson(res, 'Mükellef sorgulama yanıtı işlenemedi.');
+  try {
+    const res = await fetch(resolveApiUrl('/api/gib/recipient'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, taxId }),
+    });
+    return parseApiJson(res, 'Mükellef sorgulama yanıtı işlenemedi.');
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'Sunucuya bağlanılamadı.' };
+  }
 }
 
 export async function gibCreateDraftAndSendSms(
@@ -199,12 +240,16 @@ export async function gibCreateDraftAndSendSms(
   maskedPhone?: string;
   error?: string;
 }> {
-  const res = await fetch('/api/gib/create-and-send-sms', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId, invoice }),
-  });
-  return parseApiJson(res, 'GİB taslak/SMS yanıtı işlenemedi.');
+  try {
+    const res = await fetch(resolveApiUrl('/api/gib/create-and-send-sms'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, invoice }),
+    });
+    return parseApiJson(res, 'GİB taslak/SMS yanıtı işlenemedi.');
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'Sunucuya bağlanılamadı.' };
+  }
 }
 
 export async function gibVerifySms(
@@ -221,16 +266,20 @@ export async function gibVerifySms(
   approvedAt?: string;
   error?: string;
 }> {
-  const res = await fetch('/api/gib/verify-sms', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId, oid, code, ettn, invoiceDate }),
-  });
-  return parseApiJson(res, 'SMS doğrulama yanıtı işlenemedi.');
+  try {
+    const res = await fetch(resolveApiUrl('/api/gib/verify-sms'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, oid, code, ettn, invoiceDate }),
+    });
+    return parseApiJson(res, 'SMS doğrulama yanıtı işlenemedi.');
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'Sunucuya bağlanılamadı.' };
+  }
 }
 
 export async function gibLogout(sessionId: string): Promise<void> {
-  await fetch('/api/gib/logout', {
+  await fetch(resolveApiUrl('/api/gib/logout'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId }),
@@ -241,7 +290,7 @@ export function gibLogoutBeacon(sessionId: string): void {
   if (!sessionId || typeof navigator === 'undefined' || !navigator.sendBeacon) return;
   try {
     const blob = new Blob([JSON.stringify({ sessionId })], { type: 'text/plain' });
-    navigator.sendBeacon('/api/gib/logout', blob);
+    navigator.sendBeacon(resolveApiUrl('/api/gib/logout'), blob);
   } catch {
     // Ignore beacon failures on unload
   }
@@ -253,8 +302,12 @@ export async function fetchExchangeRates(): Promise<{
   rates?: Record<'TRY' | 'USD' | 'EUR' | 'GBP', number>;
   error?: string;
 }> {
-  const res = await fetch('/api/exchange-rates');
-  return parseApiJson(res, 'TCMB kur verisi alınamadı.');
+  try {
+    const res = await fetch(resolveApiUrl('/api/exchange-rates'));
+    return parseApiJson(res, 'TCMB kur verisi alınamadı.');
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'TCMB kur verisi alınamadı.' };
+  }
 }
 
 export async function gibGetOfficialInvoiceHtml(
@@ -262,10 +315,14 @@ export async function gibGetOfficialInvoiceHtml(
   ettn: string,
   status: 'draft' | 'approved' | 'cancelled'
 ): Promise<{ ok: boolean; html?: string; error?: string }> {
-  const res = await fetch('/api/gib/invoice-html', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId, ettn, status }),
-  });
-  return parseApiJson(res, 'GİB orijinal fatura görünümü alınamadı.');
+  try {
+    const res = await fetch(resolveApiUrl('/api/gib/invoice-html'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, ettn, status }),
+    });
+    return parseApiJson(res, 'GİB orijinal fatura görünümü alınamadı.');
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'GİB fatura görünümü alınamadı.' };
+  }
 }
