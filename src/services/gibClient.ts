@@ -1,4 +1,5 @@
 import type { GibMode, Invoice } from '../types';
+import firebaseConfig from '../../firebase-applet-config.json';
 
 export interface GibLoginPayload {
   mode: GibMode;
@@ -30,9 +31,45 @@ export interface GibLoginResponse {
     district: string;
   };
   error?: string;
+  staticHost?: boolean;
 }
 
-async function parseApiJson<T extends { ok?: boolean; error?: string }>(
+function toHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function encryptGibPasswordFallback(plainText: string): Promise<string> {
+  if (typeof window === 'undefined' || !window.crypto?.subtle) {
+    throw new Error('Tarayıcı şifreleme desteği kullanılamıyor.');
+  }
+  const encoder = new TextEncoder();
+  const seed = `${firebaseConfig.projectId || ''}:${firebaseConfig.firestoreDatabaseId || ''}:gib-vault`;
+  const keyHash = await window.crypto.subtle.digest(
+    'SHA-256',
+    encoder.encode(`${seed}:esnaf-earsiv-gib-v2`)
+  );
+  const cryptoKey = await window.crypto.subtle.importKey(
+    'raw',
+    keyHash,
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt']
+  );
+  const iv = window.crypto.getRandomValues(new Uint8Array(12));
+  const encryptedBuf = await window.crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    cryptoKey,
+    encoder.encode(plainText)
+  );
+  const combined = new Uint8Array(encryptedBuf);
+  const cipherBytes = combined.slice(0, combined.length - 16);
+  const tagBytes = combined.slice(combined.length - 16);
+  return `v2:${toHex(iv)}:${toHex(tagBytes)}:${toHex(cipherBytes)}`;
+}
+
+async function parseApiJson<T extends { ok?: boolean; error?: string; staticHost?: boolean }>(
   res: Response,
   fallbackError: string
 ): Promise<T> {
@@ -51,8 +88,9 @@ async function parseApiJson<T extends { ok?: boolean; error?: string }>(
       if (isStaticGithubPages) {
         return {
           ok: false,
+          staticHost: true,
           error:
-            'Statik GitHub Pages üzerinde sunucu API çalışmaz. GİB bağlantısı için uygulamanın AI Studio tam yığın linkini kullanın.',
+            'GitHub Pages (github.io) statik bir site olduğu için canlı GİB bağlantısı buradan yapılamaz. Şifrenizi kaydedebilirsiniz; fatura kesmek için uygulamanın AI Studio tam yığın linkini kullanın.',
         } as T;
       }
       return {
@@ -68,24 +106,59 @@ async function parseApiJson<T extends { ok?: boolean; error?: string }>(
 }
 
 export async function gibLogin(payload: GibLoginPayload): Promise<GibLoginResponse> {
-  const res = await fetch('/api/gib/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  return parseApiJson<GibLoginResponse>(res, 'GİB giriş yanıtı işlenemedi.');
+  try {
+    const res = await fetch('/api/gib/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return parseApiJson<GibLoginResponse>(res, 'GİB giriş yanıtı işlenemedi.');
+  } catch (err: any) {
+    return {
+      ok: false,
+      error: err?.message || 'Sunucuya bağlanılamadı.',
+    };
+  }
 }
 
 export async function gibEncryptCredentials(
   userCode: string,
   password: string
 ): Promise<{ ok: boolean; userCode?: string; encryptedSecret?: string; error?: string }> {
-  const res = await fetch('/api/gib/save-credentials', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userCode, password }),
-  });
-  return parseApiJson(res, 'GİB bilgileri şifrelenemedi.');
+  const cleanCode = String(userCode || '').trim();
+  const cleanPass = String(password || '');
+  if (!cleanCode || !cleanPass) {
+    return { ok: false, error: 'GİB kullanıcı kodu ve şifre alanları zorunludur.' };
+  }
+
+  try {
+    const res = await fetch('/api/gib/save-credentials', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userCode: cleanCode, password: cleanPass }),
+    });
+    const parsed = await parseApiJson<{
+      ok: boolean;
+      userCode?: string;
+      encryptedSecret?: string;
+      error?: string;
+    }>(res, 'GİB bilgileri şifrelenemedi.');
+    if (parsed.ok && parsed.encryptedSecret) {
+      return parsed;
+    }
+  } catch {
+    // Fallback below if /api is unreachable (e.g. static hosting)
+  }
+
+  try {
+    const encryptedSecret = await encryptGibPasswordFallback(cleanPass);
+    return { ok: true, userCode: cleanCode, encryptedSecret };
+  } catch (err: any) {
+    return {
+      ok: false,
+      error: err?.message || 'GİB şifresi güvenli şekilde şifrelenemedi.',
+    };
+  }
 }
 
 export async function gibLoginSaved(payload: {

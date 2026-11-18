@@ -176,6 +176,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       });
 
       if (!resp.ok || !resp.sessionId) {
+        if (rememberCredentials && userCode.trim() && password) {
+          const encResp = await gibEncryptCredentials(userCode.trim(), password);
+          if (encResp.ok && encResp.encryptedSecret) {
+            await onSaveGibCredential({
+              userCode: encResp.userCode || userCode.trim(),
+              encryptedSecret: encResp.encryptedSecret,
+              mode: 'live',
+              autoConnect: true,
+            });
+            setLoginError(
+              `${resp.error || 'GİB oturumu açılamadı.'} Ancak GİB kullanıcı kodu ve şifreniz hesabınıza güvenli şekilde kaydedildi.`
+            );
+            onNotify('GİB bilgileriniz kaydedildi.');
+            return;
+          }
+        }
         setLoginError(resp.error || 'GİB oturumu açılamadı.');
         return;
       }

@@ -364,6 +364,19 @@ export const InvoiceBuilderView: React.FC<InvoiceBuilderViewProps> = ({
       });
 
       if (!resp.ok || !resp.sessionId) {
+        if (inlineRememberCred && inlineUserCode.trim() && inlinePassword && onSaveGibCredential) {
+          const encResp = await gibEncryptCredentials(inlineUserCode.trim(), inlinePassword);
+          if (encResp.ok && encResp.encryptedSecret) {
+            await onSaveGibCredential({
+              userCode: encResp.userCode || inlineUserCode.trim(),
+              encryptedSecret: encResp.encryptedSecret,
+              mode: 'live',
+              autoConnect: true,
+            });
+            setInlineSuccessMsg('GİB kullanıcı kodu ve şifreniz kalıcı olarak kaydedildi.');
+            onNotify?.('GİB bilgileriniz kaydedildi.');
+          }
+        }
         setConnectError(resp.error || 'GİB bağlantısı kurulamadı. Bilgilerinizi kontrol edin.');
         return;
       }

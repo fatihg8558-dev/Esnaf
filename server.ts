@@ -14,7 +14,7 @@ const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT) || 3000;
 const GIB_BASE_URL = 'https://earsivportal.efatura.gov.tr/earsiv-services';
 
-function getEncryptionKey(): Buffer {
+function getCredentialSeed(): string {
   let seed = process.env.GIB_CRED_SECRET || '';
   if (!seed) {
     try {
@@ -27,11 +27,15 @@ function getEncryptionKey(): Buffer {
       // ignore
     }
   }
-  if (!seed) seed = 'esnaf-earsiv-fallback-key';
-  return crypto.scryptSync(seed, 'esnaf-earsiv-gib-salt-v1', 32);
+  return seed || 'esnaf-earsiv-fallback-key';
 }
 
-const CREDENTIAL_KEY = getEncryptionKey();
+const CREDENTIAL_SEED = getCredentialSeed();
+const CREDENTIAL_KEY = crypto.scryptSync(CREDENTIAL_SEED, 'esnaf-earsiv-gib-salt-v1', 32);
+const CREDENTIAL_KEY_V2 = crypto
+  .createHash('sha256')
+  .update(`${CREDENTIAL_SEED}:esnaf-earsiv-gib-v2`)
+  .digest();
 
 function encryptGibPassword(plainText: string): string {
   const iv = crypto.randomBytes(12);
@@ -42,7 +46,27 @@ function encryptGibPassword(plainText: string): string {
 }
 
 function decryptGibPassword(payload: string): string {
-  const parts = String(payload || '').split(':');
+  const raw = String(payload || '').trim();
+  if (raw.startsWith('v2:')) {
+    const parts = raw.slice(3).split(':');
+    if (parts.length !== 3) {
+      throw new Error('Kayıtlı GİB şifre verisi geçersiz.');
+    }
+    const [ivHex, tagHex, cipherHex] = parts;
+    const decipher = crypto.createDecipheriv(
+      'aes-256-gcm',
+      CREDENTIAL_KEY_V2,
+      Buffer.from(ivHex, 'hex')
+    );
+    decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
+    const decrypted = Buffer.concat([
+      decipher.update(Buffer.from(cipherHex, 'hex')),
+      decipher.final(),
+    ]);
+    return decrypted.toString('utf8');
+  }
+
+  const parts = raw.split(':');
   if (parts.length !== 3) {
     throw new Error('Kayıtlı GİB şifre verisi geçersiz.');
   }
