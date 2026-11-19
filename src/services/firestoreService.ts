@@ -20,14 +20,17 @@ import type {
   CheckNote,
   CheckNoteStatus,
   CurrencyCode,
+  ETebligatItem,
   ExpenseCategory,
   GibCredential,
   Invoice,
   InvoiceLineItem,
+  PaymentMethod,
+  ReceivedInvoice,
   SavedItem,
   Transaction,
 } from '../types';
-import { sanitizeString } from '../utils/formatters';
+import { addDaysISO, sanitizeString } from '../utils/formatters';
 
 function getTimeSortValue(ts: unknown): number {
   if (!ts) return 0;
@@ -841,6 +844,406 @@ export async function deleteCheckNote(id: string): Promise<void> {
   const path = `checksNotes/${id}`;
   try {
     await deleteDoc(doc(db, 'checksNotes', id));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+// 8. Alınan e-Arşiv Faturalar (Received Invoices)
+export function subscribeReceivedInvoices(
+  uid: string,
+  onData: (items: ReceivedInvoice[]) => void
+): Unsubscribe {
+  const path = 'receivedInvoices';
+  const q = query(collection(db, 'receivedInvoices'), where('ownerId', '==', uid));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const list = snap.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as Omit<ReceivedInvoice, 'id'>),
+      }));
+      list.sort((a, b) => {
+        if (a.invoiceDate !== b.invoiceDate) return b.invoiceDate.localeCompare(a.invoiceDate);
+        return getTimeSortValue(b.createdAt) - getTimeSortValue(a.createdAt);
+      });
+      onData(list);
+    },
+    (error) => handleFirestoreError(error, OperationType.LIST, path)
+  );
+}
+
+export interface UpsertReceivedInvoiceInput {
+  ettn: string;
+  invoiceNo: string;
+  invoiceDate: string;
+  invoiceType: string;
+  sellerName: string;
+  sellerTaxId: string;
+  currency: CurrencyCode;
+  exchangeRate: number;
+  subtotal: number;
+  vatTotal: number;
+  grandTotal: number;
+  approvalStatus: string;
+}
+
+export async function upsertReceivedInvoices(
+  uid: string,
+  items: UpsertReceivedInvoiceInput[],
+  existingDocs: ReceivedInvoice[]
+): Promise<{ added: number; updated: number }> {
+  if (!items.length) return { added: 0, updated: 0 };
+  const existingByEttn = new Map<string, ReceivedInvoice>();
+  const existingById = new Map<string, ReceivedInvoice>();
+  for (const docItem of existingDocs) {
+    existingByEttn.set(docItem.ettn.toLowerCase(), docItem);
+    existingById.set(docItem.id, docItem);
+  }
+
+  let added = 0;
+  let updated = 0;
+  const uidPrefix = uid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48);
+
+  for (let i = 0; i < items.length; i += 400) {
+    const chunk = items.slice(i, i + 400);
+    const batch = writeBatch(db);
+
+    for (const item of chunk) {
+      const cleanEttn = sanitizeString(item.ettn.replace(/[^a-zA-Z0-9_-]/g, ''), 64);
+      if (!cleanEttn) continue;
+      const deterministicId = `${uidPrefix}_${cleanEttn}`;
+      const existing =
+        existingByEttn.get(cleanEttn.toLowerCase()) ||
+        existingByEttn.get(item.ettn.toLowerCase()) ||
+        existingById.get(deterministicId);
+
+      const currency: CurrencyCode = ['TRY', 'USD', 'EUR', 'GBP'].includes(item.currency)
+        ? item.currency
+        : 'TRY';
+      const exchangeRate = currency === 'TRY' ? 1 : Math.max(0.0001, Number(item.exchangeRate) || 1);
+      const sharedFields = {
+        invoiceNo: sanitizeString(item.invoiceNo, 40) || cleanEttn.slice(0, 16),
+        invoiceDate: sanitizeString(item.invoiceDate, 20) || new Date().toISOString().slice(0, 10),
+        invoiceType: sanitizeString(item.invoiceType, 30) || 'SATIS',
+        sellerName: sanitizeString(item.sellerName, 160) || 'Satıcı Mükellef',
+        sellerTaxId: sanitizeString(item.sellerTaxId.replace(/\D/g, ''), 11),
+        currency,
+        exchangeRate,
+        subtotal: Math.max(0, Number(item.subtotal) || 0),
+        vatTotal: Math.max(0, Number(item.vatTotal) || 0),
+        grandTotal: Math.max(0, Number(item.grandTotal) || 0),
+        approvalStatus: sanitizeString(item.approvalStatus, 40) || 'Onaylandı',
+        updatedAt: serverTimestamp(),
+      };
+
+      if (existing) {
+        batch.update(doc(db, 'receivedInvoices', existing.id), sharedFields);
+        updated++;
+      } else {
+        batch.set(doc(db, 'receivedInvoices', deterministicId), {
+          ownerId: uid,
+          ettn: cleanEttn,
+          ...sharedFields,
+          reflectedToExpense: false,
+          linkedTransactionId: '',
+          linkedAccountId: '',
+          createdAt: serverTimestamp(),
+        });
+        added++;
+      }
+    }
+
+    try {
+      await batch.commit();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'receivedInvoices');
+    }
+  }
+
+  return { added, updated };
+}
+
+export async function reflectReceivedInvoiceToExpense(
+  uid: string,
+  recInv: ReceivedInvoice,
+  options: {
+    category: string;
+    date: string;
+    paymentMethod: PaymentMethod;
+    accountId: string;
+    accountName: string;
+    affectsBalance: boolean;
+    description: string;
+  }
+): Promise<string> {
+  const path = `receivedInvoices/${recInv.id}`;
+  const currency: CurrencyCode = recInv.currency || 'TRY';
+  const exchangeRate = currency === 'TRY' ? 1 : Math.max(0.0001, Number(recInv.exchangeRate) || 1);
+  const originalAmount = Math.max(0.01, Number(recInv.grandTotal) || 0);
+  const tlTotal =
+    currency === 'TRY'
+      ? originalAmount
+      : Math.round(originalAmount * exchangeRate * 100) / 100;
+
+  if (tlTotal <= 0) {
+    throw new Error('Fatura tutarı sıfırdan büyük olmalıdır.');
+  }
+
+  const vatRate =
+    recInv.subtotal > 0 && recInv.vatTotal >= 0
+      ? Math.min(100, Math.max(0, Math.round((recInv.vatTotal / recInv.subtotal) * 100)))
+      : 20;
+
+  const txId = crypto.randomUUID();
+  try {
+    const batch = writeBatch(db);
+    const txRef = doc(db, 'transactions', txId);
+
+    batch.set(txRef, {
+      ownerId: uid,
+      type: 'expense',
+      category: sanitizeString(options.category, 80) || 'Mal Alımı / Hammadde',
+      amount: tlTotal,
+      currency,
+      originalAmount,
+      exchangeRate,
+      entryKind: 'ledger',
+      vatRate,
+      description:
+        sanitizeString(
+          options.description ||
+            `${recInv.invoiceNo} no'lu alınan e-Arşiv faturası (${recInv.sellerName})`,
+          300
+        ) || recInv.invoiceNo,
+      date: sanitizeString(options.date || recInv.invoiceDate, 20),
+      paymentMethod: options.paymentMethod || 'transfer',
+      accountId: sanitizeString(options.accountId, 128),
+      accountName: sanitizeString(options.accountName || recInv.sellerName, 160),
+      invoiceId: recInv.id,
+      affectsBalance: false,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    if (options.accountId && options.affectsBalance) {
+      const accRef = doc(db, 'accounts', options.accountId);
+      const accSnap = await getDoc(accRef);
+      if (accSnap.exists()) {
+        // Veresiye alış faturası tedarikçi borcumuzu artırır (-tutar)
+        const currField = currencyFieldFor(currency);
+        const balanceUpdate: Record<string, unknown> = {
+          balance: increment(-tlTotal),
+          updatedAt: serverTimestamp(),
+        };
+        if (currField) {
+          balanceUpdate[currField] = increment(-originalAmount);
+        }
+        batch.update(accRef, balanceUpdate);
+      }
+    }
+
+    batch.update(doc(db, 'receivedInvoices', recInv.id), {
+      reflectedToExpense: true,
+      linkedTransactionId: txId,
+      linkedAccountId: sanitizeString(options.accountId, 128),
+      updatedAt: serverTimestamp(),
+    });
+
+    await batch.commit();
+    return txId;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function deleteReceivedInvoice(id: string): Promise<void> {
+  const path = `receivedInvoices/${id}`;
+  try {
+    await deleteDoc(doc(db, 'receivedInvoices', id));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+// 9. Dijital Vergi Dairesi e-Tebligat Kutusu
+export function subscribeETebligatlar(
+  uid: string,
+  onData: (items: ETebligatItem[]) => void
+): Unsubscribe {
+  const path = 'eTebligatlar';
+  const q = query(collection(db, 'eTebligatlar'), where('ownerId', '==', uid));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const list = snap.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as Omit<ETebligatItem, 'id'>),
+      }));
+      list.sort((a, b) => {
+        if (a.sentDate !== b.sentDate) return b.sentDate.localeCompare(a.sentDate);
+        return getTimeSortValue(b.createdAt) - getTimeSortValue(a.createdAt);
+      });
+      onData(list);
+    },
+    (error) => handleFirestoreError(error, OperationType.LIST, path)
+  );
+}
+
+export interface UpsertETebligatInput {
+  tebligatId: string;
+  tarafId?: string;
+  tarafSecureId?: string;
+  tebligId?: string;
+  tebligSecureId?: string;
+  subject: string;
+  senderUnit: string;
+  documentNo: string;
+  sentDate: string;
+  legalServedDate?: string;
+  isRead?: boolean;
+  readAt?: string;
+  notes?: string;
+  portalUrl?: string;
+}
+
+export async function upsertETebligatlar(
+  uid: string,
+  items: UpsertETebligatInput[],
+  existingDocs: ETebligatItem[]
+): Promise<{ added: number; updated: number }> {
+  if (!items.length) return { added: 0, updated: 0 };
+
+  const existingByTid = new Map<string, ETebligatItem>();
+  const existingById = new Map<string, ETebligatItem>();
+  for (const docItem of existingDocs) {
+    existingByTid.set(docItem.tebligatId.toLowerCase(), docItem);
+    existingById.set(docItem.id, docItem);
+  }
+
+  let added = 0;
+  let updated = 0;
+  const uidPrefix = uid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48);
+
+  for (let i = 0; i < items.length; i += 400) {
+    const chunk = items.slice(i, i + 400);
+    const batch = writeBatch(db);
+
+    for (const item of chunk) {
+      const cleanTid = sanitizeString(item.tebligatId.replace(/[^a-zA-Z0-9_-]/g, ''), 64);
+      if (!cleanTid) continue;
+      const deterministicId = `${uidPrefix}_dv_${cleanTid}`;
+      const existing =
+        existingByTid.get(cleanTid.toLowerCase()) ||
+        existingByTid.get(item.tebligatId.toLowerCase()) ||
+        existingById.get(deterministicId);
+
+      const sentDate = sanitizeString(item.sentDate, 20) || new Date().toISOString().slice(0, 10);
+      const legalServedDate =
+        sanitizeString(item.legalServedDate, 20) || addDaysISO(sentDate, 5);
+
+      const metaFields: Record<string, unknown> = {
+        subject: sanitizeString(item.subject, 240) || 'e-Tebligat Bildirimi',
+        senderUnit: sanitizeString(item.senderUnit, 160) || 'Vergi Dairesi',
+        documentNo: sanitizeString(item.documentNo, 64),
+        sentDate,
+        legalServedDate,
+        notes: sanitizeString(item.notes, 500),
+        portalUrl: sanitizeString(item.portalUrl, 300) || 'https://dijital.gib.gov.tr',
+        updatedAt: serverTimestamp(),
+      };
+      if (item.tarafId) metaFields.tarafId = sanitizeString(item.tarafId, 128);
+      if (item.tarafSecureId) metaFields.tarafSecureId = sanitizeString(item.tarafSecureId, 128);
+      if (item.tebligId) metaFields.tebligId = sanitizeString(item.tebligId, 128);
+      if (item.tebligSecureId) metaFields.tebligSecureId = sanitizeString(item.tebligSecureId, 128);
+
+      if (existing) {
+        batch.update(doc(db, 'eTebligatlar', existing.id), metaFields);
+        updated++;
+      } else {
+        batch.set(doc(db, 'eTebligatlar', deterministicId), {
+          ownerId: uid,
+          tebligatId: cleanTid,
+          ...metaFields,
+          isRead: Boolean(item.isRead),
+          readAt: sanitizeString(item.readAt, 40),
+          source: 'live',
+          createdAt: serverTimestamp(),
+        });
+        added++;
+      }
+    }
+
+    try {
+      await batch.commit();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'eTebligatlar');
+    }
+  }
+
+  return { added, updated };
+}
+
+export async function createManualETebligat(
+  uid: string,
+  input: {
+    subject: string;
+    senderUnit: string;
+    documentNo?: string;
+    sentDate: string;
+    notes?: string;
+  }
+): Promise<string> {
+  const subject = sanitizeString(input.subject, 240);
+  const senderUnit = sanitizeString(input.senderUnit, 160);
+  if (!subject || !senderUnit) {
+    throw new Error('Konu ve gönderen birim alanları zorunludur.');
+  }
+  const id = crypto.randomUUID();
+  const path = `eTebligatlar/${id}`;
+  const sentDate = sanitizeString(input.sentDate, 20) || new Date().toISOString().slice(0, 10);
+  const legalServedDate = addDaysISO(sentDate, 5);
+
+  try {
+    await setDoc(doc(db, 'eTebligatlar', id), {
+      ownerId: uid,
+      tebligatId: id.slice(0, 18),
+      subject,
+      senderUnit,
+      documentNo: sanitizeString(input.documentNo, 64),
+      sentDate,
+      legalServedDate,
+      isRead: false,
+      readAt: '',
+      notes: sanitizeString(input.notes, 500),
+      source: 'manual',
+      portalUrl: 'https://dijital.gib.gov.tr',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return id;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
+export async function toggleETebligatRead(id: string, isRead: boolean): Promise<void> {
+  const path = `eTebligatlar/${id}`;
+  try {
+    await updateDoc(doc(db, 'eTebligatlar', id), {
+      isRead,
+      readAt: isRead ? new Date().toISOString().slice(0, 40) : '',
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function deleteETebligat(id: string): Promise<void> {
+  const path = `eTebligatlar/${id}`;
+  try {
+    await deleteDoc(doc(db, 'eTebligatlar', id));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }

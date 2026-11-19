@@ -233,9 +233,72 @@ service cloud.firestore {
         && data.updatedAt is timestamp;
     }
 
+    function isValidReceivedInvoice(data) {
+      return data.keys().hasAll([
+          'ownerId', 'ettn', 'invoiceNo', 'invoiceDate', 'sellerName',
+          'grandTotal', 'reflectedToExpense', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'ettn', 'invoiceNo', 'invoiceDate', 'invoiceType',
+          'sellerName', 'sellerTaxId', 'currency', 'exchangeRate',
+          'subtotal', 'vatTotal', 'grandTotal', 'approvalStatus',
+          'reflectedToExpense', 'linkedTransactionId', 'linkedAccountId',
+          'createdAt', 'updatedAt'
+        ])
+        && data.ownerId is string && data.ownerId.size() <= 128 && data.ownerId == request.auth.uid
+        && data.ettn is string && data.ettn.size() >= 1 && data.ettn.size() <= 64
+        && data.invoiceNo is string && data.invoiceNo.size() >= 1 && data.invoiceNo.size() <= 40
+        && data.invoiceDate is string && data.invoiceDate.size() >= 8 && data.invoiceDate.size() <= 20
+        && isOptionalString(data, 'invoiceType', 30)
+        && data.sellerName is string && data.sellerName.size() >= 1 && data.sellerName.size() <= 160
+        && isOptionalString(data, 'sellerTaxId', 11)
+        && isOptionalCurrency(data, 'currency')
+        && (!('exchangeRate' in data) || (data.exchangeRate is number && data.exchangeRate > 0))
+        && (!('subtotal' in data) || (data.subtotal is number && data.subtotal >= 0))
+        && (!('vatTotal' in data) || (data.vatTotal is number && data.vatTotal >= 0))
+        && data.grandTotal is number && data.grandTotal >= 0
+        && isOptionalString(data, 'approvalStatus', 40)
+        && data.reflectedToExpense is bool
+        && isOptionalString(data, 'linkedTransactionId', 128)
+        && isOptionalString(data, 'linkedAccountId', 128)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidETebligat(data) {
+      return data.keys().hasAll([
+          'ownerId', 'tebligatId', 'subject', 'senderUnit', 'sentDate',
+          'isRead', 'source', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'tebligatId', 'tarafId', 'tarafSecureId', 'tebligId', 'tebligSecureId',
+          'subject', 'senderUnit', 'documentNo',
+          'sentDate', 'legalServedDate', 'isRead', 'readAt', 'notes',
+          'source', 'portalUrl', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId is string && data.ownerId.size() <= 128 && data.ownerId == request.auth.uid
+        && data.tebligatId is string && data.tebligatId.size() >= 1 && data.tebligatId.size() <= 80
+        && isOptionalString(data, 'tarafId', 128)
+        && isOptionalString(data, 'tarafSecureId', 128)
+        && isOptionalString(data, 'tebligId', 128)
+        && isOptionalString(data, 'tebligSecureId', 128)
+        && data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 240
+        && data.senderUnit is string && data.senderUnit.size() >= 1 && data.senderUnit.size() <= 160
+        && isOptionalString(data, 'documentNo', 64)
+        && data.sentDate is string && data.sentDate.size() >= 8 && data.sentDate.size() <= 20
+        && isOptionalString(data, 'legalServedDate', 20)
+        && data.isRead is bool
+        && isOptionalString(data, 'readAt', 40)
+        && isOptionalString(data, 'notes', 500)
+        && data.source in ['live', 'manual']
+        && isOptionalString(data, 'portalUrl', 300)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
     // 1. İşletme Profili (PII İzole — yalnızca kendi UID belgesine erişim)
     match /businessProfiles/{profileId} {
-      allow get: if isSignedIn() && isValidId(profileId) && profileId == request.auth.uid && existing().ownerId == request.auth.uid;
+      allow get: if isSignedIn() && isValidId(profileId) && profileId == request.auth.uid && (resource == null || existing().ownerId == request.auth.uid);
       allow list: if false;
       allow create: if isSignedIn()
         && isValidId(profileId)
@@ -382,7 +445,7 @@ service cloud.firestore {
 
     // 6. Şifrelenmiş GİB Kimlik Bilgileri (PII/Secret İzole — yalnızca kendi UID belgesi)
     match /gibCredentials/{credId} {
-      allow get: if isSignedIn() && isValidId(credId) && credId == request.auth.uid && existing().ownerId == request.auth.uid;
+      allow get: if isSignedIn() && isValidId(credId) && credId == request.auth.uid && (resource == null || existing().ownerId == request.auth.uid);
       allow list: if false;
       allow create: if isSignedIn()
         && isValidId(credId)
@@ -454,6 +517,71 @@ service cloud.firestore {
           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
         );
       allow delete: if isSignedIn() && isValidId(itemId) && existing().ownerId == request.auth.uid;
+    }
+
+    // 9. Alınan e-Arşiv Faturalar (Adımıza Kesilen)
+    match /receivedInvoices/{docId} {
+      allow get: if isSignedIn() && isValidId(docId) && existing().ownerId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if isSignedIn()
+        && isValidId(docId)
+        && isValidReceivedInvoice(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isSignedIn()
+        && isValidId(docId)
+        && isValidReceivedInvoice(incoming())
+        && existing().ownerId == request.auth.uid
+        && incoming().ownerId == existing().ownerId
+        && incoming().ettn == existing().ettn
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action 1: GİB senkronizasyonu ile fatura özetini güncelle
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'invoiceNo', 'invoiceDate', 'invoiceType', 'sellerName', 'sellerTaxId',
+            'currency', 'exchangeRate', 'subtotal', 'vatTotal', 'grandTotal',
+            'approvalStatus', 'updatedAt'
+          ]) ||
+          // Action 2: Gidere / cariye aktar durumunu işle
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'reflectedToExpense', 'linkedTransactionId', 'linkedAccountId', 'updatedAt'
+          ])
+        );
+      allow delete: if isSignedIn() && isValidId(docId) && existing().ownerId == request.auth.uid;
+    }
+
+    // 10. Dijital Vergi Dairesi e-Tebligat Kayıtları
+    match /eTebligatlar/{docId} {
+      allow get: if isSignedIn() && isValidId(docId) && existing().ownerId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if isSignedIn()
+        && isValidId(docId)
+        && isValidETebligat(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isSignedIn()
+        && isValidId(docId)
+        && isValidETebligat(incoming())
+        && existing().ownerId == request.auth.uid
+        && incoming().ownerId == existing().ownerId
+        && incoming().tebligatId == existing().tebligatId
+        && incoming().source == existing().source
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action 1: Tebligat detay ve not güncelleme
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'tarafId', 'tarafSecureId', 'tebligId', 'tebligSecureId',
+            'subject', 'senderUnit', 'documentNo', 'sentDate',
+            'legalServedDate', 'notes', 'portalUrl', 'updatedAt'
+          ]) ||
+          // Action 2: Okundu / okunmadı durumunu değiştirme
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'isRead', 'readAt', 'updatedAt'
+          ])
+        );
+      allow delete: if isSignedIn() && isValidId(docId) && existing().ownerId == request.auth.uid;
     }
   }
 }

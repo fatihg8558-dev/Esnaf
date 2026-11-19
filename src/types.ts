@@ -176,6 +176,12 @@ export interface GibSessionState {
   };
 }
 
+export interface DvSessionState {
+  connected: boolean;
+  dvSessionId: string | null;
+  userCode: string;
+}
+
 export interface GibCredential {
   id: string;
   ownerId: string;
@@ -187,4 +193,56 @@ export interface GibCredential {
   updatedAt?: unknown;
 }
 
-export type ActiveTab = 'dashboard' | 'ledger' | 'accounts' | 'invoice' | 'archive' | 'settings';
+export interface ReceivedInvoice {
+  id: string;
+  ownerId: string;
+  ettn: string;
+  invoiceNo: string;
+  invoiceDate: string; // YYYY-MM-DD
+  invoiceType: string;
+  sellerName: string;
+  sellerTaxId: string;
+  currency: CurrencyCode;
+  exchangeRate: number;
+  subtotal: number;
+  vatTotal: number;
+  grandTotal: number;
+  approvalStatus: string;
+  reflectedToExpense: boolean;
+  linkedTransactionId: string;
+  linkedAccountId: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface ETebligatItem {
+  id: string;
+  ownerId: string;
+  tebligatId: string;
+  tarafId?: string;
+  tarafSecureId?: string;
+  tebligId?: string;
+  tebligSecureId?: string;
+  subject: string;
+  senderUnit: string;
+  documentNo: string;
+  sentDate: string; // YYYY-MM-DD
+  legalServedDate: string; // YYYY-MM-DD (+5 days)
+  isRead: boolean;
+  readAt: string;
+  notes: string;
+  source: 'live' | 'manual';
+  portalUrl?: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export type ActiveTab =
+  | 'dashboard'
+  | 'ledger'
+  | 'accounts'
+  | 'invoice'
+  | 'archive'
+  | 'received'
+  | 'etebligat'
+  | 'settings';

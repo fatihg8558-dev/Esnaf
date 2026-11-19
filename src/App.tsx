@@ -4,10 +4,12 @@ import {
   Archive,
   Building2,
   FilePlus2,
+  Inbox,
   LayoutDashboard,
   Loader2,
   LogIn,
   LogOut,
+  Mail,
   Receipt,
   Settings,
   ShieldCheck,
@@ -20,10 +22,13 @@ import type {
   ActiveTab,
   BusinessProfile,
   CheckNote,
+  DvSessionState,
+  ETebligatItem,
   ExpenseCategory,
   GibCredential,
   GibSessionState,
   Invoice,
+  ReceivedInvoice,
   SavedItem,
   Transaction,
 } from './types';
@@ -34,37 +39,48 @@ import {
   createCheckNote,
   createDraftInvoice,
   createExpenseCategory,
+  createManualETebligat,
   createSavedItem,
   createTransaction,
   deleteAccount,
   deleteCheckNote,
+  deleteETebligat,
   deleteExpenseCategory,
   deleteGibCredential,
   deleteInvoice,
+  deleteReceivedInvoice,
   deleteSavedItem,
   deleteTransaction,
+  reflectReceivedInvoiceToExpense,
   saveBusinessProfile,
   saveGibCredential,
   subscribeAccounts,
   subscribeBusinessProfile,
   subscribeChecksNotes,
+  subscribeETebligatlar,
   subscribeExpenseCategories,
   subscribeGibCredential,
   subscribeInvoices,
+  subscribeReceivedInvoices,
   subscribeSavedItems,
   subscribeTransactions,
+  toggleETebligatRead,
   updateAccount,
   updateCheckNoteStatus,
   updateGibAutoConnect,
   updateTransaction,
+  upsertETebligatlar,
+  upsertReceivedInvoices,
 } from './services/firestoreService';
-import { gibLoginSaved, gibLogout, gibLogoutBeacon } from './services/gibClient';
+import { dvLogout, gibLoginSaved, gibLogout, gibLogoutBeacon } from './services/gibClient';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { DashboardView } from './components/DashboardView';
 import { LedgerView } from './components/LedgerView';
 import { AccountsView } from './components/AccountsView';
 import { InvoiceBuilderView } from './components/InvoiceBuilderView';
 import { ArchiveView } from './components/ArchiveView';
+import { ReceivedInvoicesView } from './components/ReceivedInvoicesView';
+import { ETebligatView } from './components/ETebligatView';
 import { SettingsView } from './components/SettingsView';
 import { ProfileModal } from './components/ProfileModal';
 import { InvoicePreviewModal } from './components/InvoicePreviewModal';
@@ -75,6 +91,8 @@ const NAV_ITEMS: { id: ActiveTab; label: string; mobileLabel: string; icon: Reac
   { id: 'accounts', label: 'Cari Takip', mobileLabel: 'Cari', icon: Users },
   { id: 'invoice', label: 'e-Arşiv Fatura', mobileLabel: 'Fatura', icon: FilePlus2 },
   { id: 'archive', label: 'Fatura Arşivi', mobileLabel: 'Arşiv', icon: Archive },
+  { id: 'received', label: 'Alınan Faturalar', mobileLabel: 'Alınan', icon: Inbox },
+  { id: 'etebligat', label: 'e-Tebligat', mobileLabel: 'Tebligat', icon: Mail },
   { id: 'settings', label: 'Ayarlar', mobileLabel: 'Ayarlar', icon: Settings },
 ];
 
@@ -93,11 +111,18 @@ function PortalShell() {
   const [savedGibCred, setSavedGibCred] = useState<GibCredential | null>(null);
   const [customExpenseCategories, setCustomExpenseCategories] = useState<ExpenseCategory[]>([]);
   const [checksNotes, setChecksNotes] = useState<CheckNote[]>([]);
+  const [receivedInvoices, setReceivedInvoices] = useState<ReceivedInvoice[]>([]);
+  const [eTebligatlar, setETebligatlar] = useState<ETebligatItem[]>([]);
 
   const [gibSession, setGibSession] = useState<GibSessionState>({
     connected: false,
     sessionId: null,
     mode: 'live',
+    userCode: '',
+  });
+  const [dvSession, setDvSession] = useState<DvSessionState>({
+    connected: false,
+    dvSessionId: null,
     userCode: '',
   });
   const [gibAutoConnecting, setGibAutoConnecting] = useState(false);
@@ -137,6 +162,8 @@ function PortalShell() {
       setSavedGibCred(null);
       setCustomExpenseCategories([]);
       setChecksNotes([]);
+      setReceivedInvoices([]);
+      setETebligatlar([]);
       setGibAutoError(null);
       setManualGibLogout(false);
       attemptedCredKeyRef.current = null;
@@ -151,6 +178,8 @@ function PortalShell() {
     const unsubGibCred = subscribeGibCredential(user.uid, setSavedGibCred);
     const unsubExpCats = subscribeExpenseCategories(user.uid, setCustomExpenseCategories);
     const unsubChecks = subscribeChecksNotes(user.uid, setChecksNotes);
+    const unsubReceived = subscribeReceivedInvoices(user.uid, setReceivedInvoices);
+    const unsubTebligat = subscribeETebligatlar(user.uid, setETebligatlar);
 
     return () => {
       unsubProfile();
@@ -161,6 +190,8 @@ function PortalShell() {
       unsubGibCred();
       unsubExpCats();
       unsubChecks();
+      unsubReceived();
+      unsubTebligat();
     };
   }, [user]);
 
@@ -287,6 +318,10 @@ function PortalShell() {
       await gibLogout(gibSession.sessionId);
       setGibSession({ connected: false, sessionId: null, mode: 'live', userCode: '' });
     }
+    if (dvSession.dvSessionId) {
+      await dvLogout(dvSession.dvSessionId);
+      setDvSession({ connected: false, dvSessionId: null, userCode: '' });
+    }
     setSavedGibCred(null);
     setManualGibLogout(false);
     attemptedCredKeyRef.current = null;
@@ -378,23 +413,40 @@ function PortalShell() {
         </div>
 
         {/* Navigation Links */}
-        <nav className="flex-1 px-3 py-4 space-y-1">
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const active = activeTab === item.id;
+            const badgeCount =
+              item.id === 'etebligat'
+                ? eTebligatlar.filter((t) => !t.isRead).length
+                : item.id === 'received'
+                ? receivedInvoices.filter((r) => !r.reflectedToExpense).length
+                : 0;
             return (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                className={`w-full flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
                   active
                     ? 'bg-blue-600/15 text-blue-400 border border-blue-500/20'
                     : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 border border-transparent'
                 }`}
               >
-                <Icon className="w-4 h-4 shrink-0" />
-                <span>{item.label}</span>
+                <span className="flex items-center gap-3 min-w-0">
+                  <Icon className="w-4 h-4 shrink-0" />
+                  <span>{item.label}</span>
+                </span>
+                {badgeCount > 0 && (
+                  <span
+                    className={`text-[11px] font-mono-num font-semibold ${
+                      item.id === 'etebligat' ? 'text-amber-400' : 'text-blue-400'
+                    }`}
+                  >
+                    {badgeCount}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -528,6 +580,8 @@ function PortalShell() {
               accounts={accounts}
               invoices={liveInvoices}
               checksNotes={checksNotes}
+              receivedInvoices={receivedInvoices}
+              eTebligatlar={eTebligatlar}
               onNavigate={setActiveTab}
               onOpenAccount={(accId) => {
                 setFocusAccountId(accId);
@@ -677,6 +731,53 @@ function PortalShell() {
             />
           )}
 
+          {activeTab === 'received' && (
+            <ReceivedInvoicesView
+              profile={profile}
+              accounts={accounts}
+              receivedInvoices={receivedInvoices}
+              customExpenseCategories={customExpenseCategories}
+              gibSession={gibSession}
+              dvSession={dvSession}
+              savedGibCred={savedGibCred}
+              onDvSessionChange={setDvSession}
+              onSaveGibCredential={async (cred) => {
+                await saveGibCredential(user.uid, cred);
+              }}
+              onUpsertReceivedInvoices={(items) =>
+                upsertReceivedInvoices(user.uid, items, receivedInvoices)
+              }
+              onReflectToExpense={(recInv, options) =>
+                reflectReceivedInvoiceToExpense(user.uid, recInv, options)
+              }
+              onDeleteReceivedInvoice={(id) => deleteReceivedInvoice(id)}
+              onNotify={showToast}
+            />
+          )}
+
+          {activeTab === 'etebligat' && (
+            <ETebligatView
+              profile={profile}
+              eTebligatlar={eTebligatlar}
+              dvSession={dvSession}
+              savedGibCred={savedGibCred}
+              onDvSessionChange={setDvSession}
+              onSaveGibCredential={async (cred) => {
+                await saveGibCredential(user.uid, cred);
+              }}
+              onUpsertETebligatlar={(items) =>
+                upsertETebligatlar(user.uid, items, eTebligatlar)
+              }
+              onCreateManualETebligat={(input) => createManualETebligat(user.uid, input)}
+              onToggleRead={async (id, isRead) => {
+                await toggleETebligatRead(id, isRead);
+                showToast(isRead ? 'Tebligat okundu işaretlendi.' : 'Tebligat okunmadı yapıldı.');
+              }}
+              onDeleteETebligat={(id) => deleteETebligat(id)}
+              onNotify={showToast}
+            />
+          )}
+
           {activeTab === 'settings' && (
             <SettingsView
               profile={profile}
@@ -725,7 +826,7 @@ function PortalShell() {
       </div>
 
       {/* Mobile Bottom Tab Navigation (<= 64px height, >= 44px touch targets) */}
-      <nav className="no-print md:hidden fixed bottom-0 inset-x-0 z-40 h-16 bg-[#0F172A]/95 backdrop-blur border-t border-slate-800 grid grid-cols-6">
+      <nav className="no-print md:hidden fixed bottom-0 inset-x-0 z-40 h-16 bg-[#0F172A]/95 backdrop-blur border-t border-slate-800 flex items-center overflow-x-auto px-1">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const active = activeTab === item.id;
@@ -734,7 +835,7 @@ function PortalShell() {
               key={item.id}
               type="button"
               onClick={() => setActiveTab(item.id)}
-              className={`flex flex-col items-center justify-center gap-1 min-h-[44px] transition-colors ${
+              className={`flex flex-col items-center justify-center gap-1 min-h-[44px] min-w-[68px] flex-1 shrink-0 px-2 transition-colors ${
                 active ? 'text-blue-400' : 'text-slate-400 hover:text-slate-200'
               }`}
             >

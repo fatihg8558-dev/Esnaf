@@ -1,6 +1,13 @@
 import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
-import type { Account, CurrencyCode, Invoice } from '../types';
+import type {
+  Account,
+  BusinessProfile,
+  CurrencyCode,
+  ETebligatItem,
+  Invoice,
+  ReceivedInvoice,
+} from '../types';
 import {
   ACCOUNT_TYPE_LABELS,
   formatCurrency,
@@ -164,7 +171,7 @@ function formatGibAmount(value: number, currency: CurrencyCode): string {
   return `${formatted} GBP`;
 }
 
-async function renderHtmlContainerToPdf(html: string, filename: string): Promise<void> {
+async function renderHtmlContainerToPdfInstance(html: string): Promise<jsPDF> {
   const wrapper = document.createElement('div');
   wrapper.style.position = 'fixed';
   wrapper.style.left = '-10000px';
@@ -212,10 +219,15 @@ async function renderHtmlContainerToPdf(html: string, filename: string): Promise
       heightLeft -= pageHeight;
     }
 
-    pdf.save(filename);
+    return pdf;
   } finally {
     document.body.removeChild(wrapper);
   }
+}
+
+async function renderHtmlContainerToPdf(html: string, filename: string): Promise<void> {
+  const pdf = await renderHtmlContainerToPdfInstance(html);
+  pdf.save(filename);
 }
 
 /**
@@ -773,4 +785,178 @@ export async function downloadAccountStatementPdf(params: {
 
   const safeName = account.name.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
   await renderHtmlContainerToPdf(html, `cari-ekstre-${safeName}-${currencyFilter}.pdf`);
+}
+
+export async function downloadReceivedInvoicePdf(
+  recInv: ReceivedInvoice,
+  buyerInfo?: { title?: string; taxId?: string },
+  officialHtml?: string
+): Promise<void> {
+  const cleanNo = (recInv.invoiceNo || recInv.ettn).replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `alinan-fatura-${cleanNo}.pdf`;
+
+  if (officialHtml) {
+    const rendered = await tryRenderOfficialGibHtmlToPdf(officialHtml, filename);
+    if (rendered) return;
+  }
+
+  const currency: CurrencyCode = recInv.currency || 'TRY';
+  const html = `
+    <div style="padding:28px 32px;background:#ffffff;color:#000000;font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.45;">
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #000000;padding-bottom:12px;margin-bottom:16px;">
+        <div>
+          <div style="font-size:15px;font-weight:700;">ALINAN e-ARŞİV FATURA ÖZETİ</div>
+          <div style="font-size:10px;color:#333333;margin-top:2px;">ETTN: ${escapeHtml(recInv.ettn)}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          ${buildGibEmblemSvg(56)}
+        </div>
+      </div>
+
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+        <tr>
+          <td style="border:1px solid #000000;padding:8px 10px;width:50%;vertical-align:top;">
+            <div style="font-size:10px;font-weight:700;margin-bottom:4px;">SATICI BİLGİLERİ</div>
+            <div style="font-weight:700;">${escapeHtml(recInv.sellerName)}</div>
+            <div>VKN / TCKN: ${escapeHtml(recInv.sellerTaxId || '-')}</div>
+          </td>
+          <td style="border:1px solid #000000;padding:8px 10px;width:50%;vertical-align:top;">
+            <div style="font-size:10px;font-weight:700;margin-bottom:4px;">ALICI &amp; BELGE BİLGİLERİ</div>
+            <div><strong>Alıcı:</strong> ${escapeHtml(buyerInfo?.title || 'İşletme Hesabı')}</div>
+            ${buyerInfo?.taxId ? `<div><strong>VKN/TCKN:</strong> ${escapeHtml(buyerInfo.taxId)}</div>` : ''}
+            <div><strong>Fatura No:</strong> ${escapeHtml(recInv.invoiceNo)}</div>
+            <div><strong>Tarih:</strong> ${formatDateTR(recInv.invoiceDate)} · <strong>Durum:</strong> ${escapeHtml(recInv.approvalStatus || 'Onaylandı')}</div>
+          </td>
+        </tr>
+      </table>
+
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+        <thead>
+          <tr style="background:#f8fafc;">
+            <th style="border:1px solid #000000;padding:7px 10px;text-align:left;">Tutar Kalemi</th>
+            <th style="border:1px solid #000000;padding:7px 10px;text-align:right;">Tutar (${currency})</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="border:1px solid #000000;padding:7px 10px;">Mal / Hizmet Toplam Tutarı (Matrah)</td>
+            <td style="border:1px solid #000000;padding:7px 10px;text-align:right;">${formatCurrency(recInv.subtotal, currency)}</td>
+          </tr>
+          <tr>
+            <td style="border:1px solid #000000;padding:7px 10px;">Hesaplanan KDV Toplamı</td>
+            <td style="border:1px solid #000000;padding:7px 10px;text-align:right;">${formatCurrency(recInv.vatTotal, currency)}</td>
+          </tr>
+          <tr style="font-weight:700;">
+            <td style="border:1px solid #000000;padding:7px 10px;">Vergiler Dahil Ödenecek Tutar</td>
+            <td style="border:1px solid #000000;padding:7px 10px;text-align:right;">${formatCurrency(recInv.grandTotal, currency)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="border:1px solid #000000;padding:8px 10px;font-size:10px;">
+        <strong>Not:</strong> ${escapeHtml(currencyWordsLabel(recInv.grandTotal, currency))}
+      </div>
+    </div>
+  `;
+
+  await renderHtmlContainerToPdf(html, filename);
+}
+
+export async function createETebligatSummaryPdfBlob(
+  item: ETebligatItem,
+  profile?: BusinessProfile | null
+): Promise<{ blob: Blob; fileName: string }> {
+  const legalDate = item.legalServedDate || item.sentDate;
+  const html = `
+    <div style="padding:32px 36px;background:#ffffff;color:#0f172a;font-family:Arial,Helvetica,sans-serif;font-size:11.5px;line-height:1.5;">
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2.5px solid #0f172a;padding-bottom:14px;margin-bottom:18px;">
+        <div>
+          <div style="font-size:17px;font-weight:800;color:#0f172a;">ELEKTRONİK TEBLİGAT (e-TEBLİGAT) ÖZET BELGESİ</div>
+          <div style="font-size:10.5px;color:#475569;margin-top:3px;">
+            213 Sayılı VUK 107/A Maddesi Kapsamında Tebligat Kaydı
+          </div>
+        </div>
+        <div>${buildGibEmblemSvg(60)}</div>
+      </div>
+
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+        <tr>
+          <td style="border:1px solid #cbd5e1;padding:10px 12px;width:50%;vertical-align:top;background:#f8fafc;">
+            <div style="font-size:10px;font-weight:700;color:#475569;margin-bottom:4px;">MUHATAP / MÜKELLEF BİLGİLERİ</div>
+            <div style="font-weight:700;font-size:12.5px;color:#0f172a;">${escapeHtml(
+              profile?.title || 'İşletme Hesabı'
+            )}</div>
+            ${
+              profile?.taxId
+                ? `<div style="margin-top:2px;">VKN / TCKN: ${escapeHtml(profile.taxId)}</div>`
+                : ''
+            }
+            ${
+              profile?.taxOffice
+                ? `<div>Vergi Dairesi: ${escapeHtml(profile.taxOffice)}</div>`
+                : ''
+            }
+          </td>
+          <td style="border:1px solid #cbd5e1;padding:10px 12px;width:50%;vertical-align:top;">
+            <div style="font-size:10px;font-weight:700;color:#475569;margin-bottom:4px;">GÖNDEREN MAKAM &amp; BELGE NO</div>
+            <div style="font-weight:700;color:#0f172a;">${escapeHtml(item.senderUnit)}</div>
+            <div style="margin-top:3px;"><strong>Belge / Evrak No:</strong> ${escapeHtml(
+              item.documentNo || '-'
+            )}</div>
+            <div><strong>Kayıt Türü:</strong> ${
+              item.source === 'live' ? 'Dijital Vergi Dairesi' : 'Manuel Tebligat Kaydı'
+            }</div>
+          </td>
+        </tr>
+      </table>
+
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+        <tbody>
+          <tr>
+            <td style="border:1px solid #cbd5e1;padding:8px 12px;width:32%;font-weight:700;background:#f8fafc;">Tebligat Konusu</td>
+            <td style="border:1px solid #cbd5e1;padding:8px 12px;font-weight:700;">${escapeHtml(
+              item.subject
+            )}</td>
+          </tr>
+          <tr>
+            <td style="border:1px solid #cbd5e1;padding:8px 12px;font-weight:700;background:#f8fafc;">Elektronik Ortama İletim Tarihi</td>
+            <td style="border:1px solid #cbd5e1;padding:8px 12px;">${formatDateTR(
+              item.sentDate
+            )}</td>
+          </tr>
+          <tr>
+            <td style="border:1px solid #cbd5e1;padding:8px 12px;font-weight:700;background:#f8fafc;">Yasal Tebliğ Tarihi (+5 Gün)</td>
+            <td style="border:1px solid #cbd5e1;padding:8px 12px;font-weight:700;">${formatDateTR(
+              legalDate
+            )}</td>
+          </tr>
+          <tr>
+            <td style="border:1px solid #cbd5e1;padding:8px 12px;font-weight:700;background:#f8fafc;">Okunma Durumu</td>
+            <td style="border:1px solid #cbd5e1;padding:8px 12px;">${
+              item.isRead
+                ? `Okundu${item.readAt ? ` (${escapeHtml(item.readAt)})` : ''}`
+                : 'Okunmadı'
+            }</td>
+          </tr>
+          <tr>
+            <td style="border:1px solid #cbd5e1;padding:8px 12px;font-weight:700;background:#f8fafc;">Notlar / Açıklama</td>
+            <td style="border:1px solid #cbd5e1;padding:8px 12px;white-space:pre-wrap;">${escapeHtml(
+              item.notes || 'Kayıtlı ek not bulunmamaktadır.'
+            )}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="border:1px solid #cbd5e1;background:#f8fafc;padding:10px 12px;font-size:10px;color:#334155;">
+        <strong>Yasal Bilgilendirme:</strong> 213 sayılı Vergi Usul Kanunu'nun 107/A maddesi uyarınca elektronik ortamda tebligat, muhatabın elektronik adresine ulaştığı tarihi izleyen beşinci günün sonunda yapılmış sayılır.
+      </div>
+    </div>
+  `;
+
+  const pdf = await renderHtmlContainerToPdfInstance(html);
+  const blob = pdf.output('blob');
+  const cleanName = (item.documentNo || item.tebligatId || 'etebligat')
+    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .slice(0, 48);
+  return { blob, fileName: `etebligat-${cleanName}.pdf` };
 }

@@ -7,8 +7,10 @@ import {
   CalendarClock,
   CheckCircle2,
   FilePlus2,
+  Inbox,
   Landmark,
   Loader2,
+  Mail,
   Plus,
   Receipt,
   RefreshCw,
@@ -25,12 +27,15 @@ import type {
   CheckNoteKind,
   CheckNoteStatus,
   CurrencyCode,
+  ETebligatItem,
   Invoice,
+  ReceivedInvoice,
   Transaction,
 } from '../types';
 import {
   CURRENCY_LABELS,
   CURRENCY_OPTIONS,
+  addDaysISO,
   daysUntilDue,
   formatCurrency,
   formatDateTR,
@@ -44,6 +49,8 @@ interface DashboardViewProps {
   accounts: Account[];
   invoices: Invoice[];
   checksNotes: CheckNote[];
+  receivedInvoices: ReceivedInvoice[];
+  eTebligatlar: ETebligatItem[];
   onNavigate: (tab: ActiveTab) => void;
   onOpenAccount: (accountId: string) => void;
   onQuickAddTransaction: () => void;
@@ -75,6 +82,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   accounts,
   invoices,
   checksNotes,
+  receivedInvoices,
+  eTebligatlar,
   onNavigate,
   onOpenAccount,
   onQuickAddTransaction,
@@ -206,6 +215,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         : checksNotes;
     return list.slice(0, 10);
   }, [checksNotes, checkFilter]);
+
+  const unreadTebligatlar = useMemo(
+    () => eTebligatlar.filter((t) => !t.isRead),
+    [eTebligatlar]
+  );
+
+  const pendingReceivedInvoices = useMemo(
+    () => receivedInvoices.filter((r) => !r.reflectedToExpense),
+    [receivedInvoices]
+  );
 
   const monthlySeries = useMemo(() => {
     const now = new Date();
@@ -447,6 +466,78 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* e-Tebligat & Alınan Faturalar Notifications */}
+      {(unreadTebligatlar.length > 0 || pendingReceivedInvoices.length > 0) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {unreadTebligatlar.length > 0 && (
+            <div className="bg-[#131C2E] border border-red-500/35 rounded-xl p-4 flex flex-col justify-between gap-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-2.5 min-w-0">
+                  <Mail className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold text-red-200">
+                      Okunmamış e-Tebligat Bildirimi ({unreadTebligatlar.length})
+                    </h3>
+                    <p className="text-xs text-slate-300 mt-0.5 truncate">
+                      {unreadTebligatlar[0].subject} · {unreadTebligatlar[0].senderUnit}
+                    </p>
+                    <p className="text-[11px] text-amber-300 font-mono-num mt-1">
+                      Yasal tebliğ:{' '}
+                      {formatDateTR(
+                        unreadTebligatlar[0].legalServedDate ||
+                          addDaysISO(unreadTebligatlar[0].sentDate, 5)
+                      )}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('etebligat')}
+                  className="px-3 py-1.5 bg-red-600/20 hover:bg-red-600/35 text-red-200 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0"
+                >
+                  Tebligatlara Git
+                </button>
+              </div>
+            </div>
+          )}
+
+          {pendingReceivedInvoices.length > 0 && (
+            <div className="bg-[#131C2E] border border-blue-500/35 rounded-xl p-4 flex flex-col justify-between gap-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-2.5 min-w-0">
+                  <Inbox className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold text-blue-200">
+                      Gidere İşlenmemiş Alınan Fatura ({pendingReceivedInvoices.length})
+                    </h3>
+                    <p className="text-xs text-slate-300 mt-0.5 truncate">
+                      Son: {pendingReceivedInvoices[0].sellerName} ·{' '}
+                      <span className="font-mono-num">
+                        {formatCurrency(
+                          pendingReceivedInvoices[0].grandTotal,
+                          pendingReceivedInvoices[0].currency
+                        )}
+                      </span>
+                    </p>
+                    <p className="text-[11px] text-slate-400 font-mono-num mt-1">
+                      Fatura No: {pendingReceivedInvoices[0].invoiceNo} ·{' '}
+                      {formatDateTR(pendingReceivedInvoices[0].invoiceDate)}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('received')}
+                  className="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/35 text-blue-200 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0"
+                >
+                  Faturalara Git
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Urgent Due Notifications Banner (Checks/Notes <= 7 days + Accounts <= 14 days) */}
       {(urgentChecks.length > 0 || dueAccounts.length > 0) && (

@@ -1,4 +1,4 @@
-import type { GibMode, Invoice } from '../types';
+import type { CurrencyCode, GibMode, Invoice } from '../types';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 export interface GibLoginPayload {
@@ -325,4 +325,257 @@ export async function gibGetOfficialInvoiceHtml(
   } catch (err: any) {
     return { ok: false, error: err?.message || 'GİB fatura görünümü alınamadı.' };
   }
+}
+
+export interface RemoteReceivedInvoiceItem {
+  ettn: string;
+  invoiceNo: string;
+  invoiceDate: string;
+  invoiceType: string;
+  sellerName: string;
+  sellerTaxId: string;
+  currency: CurrencyCode;
+  exchangeRate: number;
+  subtotal: number;
+  vatTotal: number;
+  grandTotal: number;
+  approvalStatus: string;
+}
+
+export async function gibFetchReceivedInvoices(
+  sessionId: string,
+  startDate: string,
+  endDate: string
+): Promise<{ ok: boolean; items?: RemoteReceivedInvoiceItem[]; error?: string; staticHost?: boolean }> {
+  try {
+    const res = await fetch(resolveApiUrl('/api/gib/received-invoices'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, startDate, endDate }),
+    });
+    return parseApiJson(res, 'Alınan e-Arşiv faturalar alınamadı.');
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'Sunucuya bağlanılamadı.' };
+  }
+}
+
+export async function gibGetReceivedInvoiceHtml(
+  sessionId: string,
+  ettn: string,
+  onayDurumu = 'Onaylandı'
+): Promise<{ ok: boolean; html?: string; error?: string; staticHost?: boolean }> {
+  try {
+    const res = await fetch(resolveApiUrl('/api/gib/received-invoice-html'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, ettn, onayDurumu }),
+    });
+    return parseApiJson(res, 'Alınan fatura görünümü alınamadı.');
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'Sunucuya bağlanılamadı.' };
+  }
+}
+
+export interface DvLoginResponse {
+  ok: boolean;
+  dvSessionId?: string;
+  userCode?: string;
+  requiresCaptcha?: boolean;
+  requiresCredentials?: boolean;
+  sessionExpired?: boolean;
+  portalUnavailable?: boolean;
+  captchaImage?: string;
+  error?: string;
+  staticHost?: boolean;
+}
+
+export async function dvStartLogin(payload: {
+  userCode?: string;
+  encryptedSecret?: string;
+  password?: string;
+}): Promise<DvLoginResponse> {
+  try {
+    const res = await fetch(resolveApiUrl('/api/dv/start-login'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return parseApiJson<DvLoginResponse>(res, 'Dijital Vergi Dairesi bağlantısı başlatılamadı.');
+  } catch (err: any) {
+    return { ok: false, portalUnavailable: true, error: err?.message || 'Sunucuya bağlanılamadı.' };
+  }
+}
+
+export async function dvCompleteLogin(payload: {
+  dvSessionId: string;
+  userCode?: string;
+  encryptedSecret?: string;
+  password?: string;
+  captchaCode: string;
+}): Promise<DvLoginResponse> {
+  try {
+    const res = await fetch(resolveApiUrl('/api/dv/complete-login'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return parseApiJson<DvLoginResponse>(res, 'Dijital Vergi Dairesi girişi tamamlanamadı.');
+  } catch (err: any) {
+    return { ok: false, portalUnavailable: true, error: err?.message || 'Sunucuya bağlanılamadı.' };
+  }
+}
+
+export async function dvFetchReceivedInvoices(
+  dvSessionId: string,
+  startDate: string,
+  endDate: string
+): Promise<{
+  ok: boolean;
+  items?: RemoteReceivedInvoiceItem[];
+  clampedToTwoMonths?: boolean;
+  sessionExpired?: boolean;
+  portalUnavailable?: boolean;
+  error?: string;
+  staticHost?: boolean;
+}> {
+  try {
+    const res = await fetch(resolveApiUrl('/api/dv/received-invoices'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dvSessionId, startDate, endDate }),
+    });
+    return parseApiJson(res, 'Alınan e-Arşiv faturalar alınamadı.');
+  } catch (err: any) {
+    return { ok: false, portalUnavailable: true, error: err?.message || 'Sunucuya bağlanılamadı.' };
+  }
+}
+
+export interface RemoteETebligatItem {
+  tebligatId: string;
+  tarafId?: string;
+  tarafSecureId?: string;
+  tebligId?: string;
+  tebligSecureId?: string;
+  subject: string;
+  senderUnit: string;
+  documentNo: string;
+  sentDate: string;
+  legalServedDate?: string;
+  isRead?: boolean;
+  readAt?: string;
+  portalUrl?: string;
+}
+
+export interface ETebligatAttachment {
+  id: string;
+  secureId: string;
+  belgeTip: string;
+  uzanti: string;
+  adi: string;
+}
+
+export interface DvETebligatContentResponse {
+  ok: boolean;
+  pdfBase64?: string;
+  mimeType?: string;
+  fileName?: string;
+  tarafId?: string;
+  tarafSecureId?: string;
+  tebligId?: string;
+  tebligSecureId?: string;
+  markedReadAt?: string;
+  zarfDetay?: {
+    subject?: string;
+    senderUnit?: string;
+    documentNo?: string;
+    sentDate?: string;
+    legalServedDate?: string;
+  };
+  ekler?: ETebligatAttachment[];
+  sessionExpired?: boolean;
+  portalUnavailable?: boolean;
+  error?: string;
+  staticHost?: boolean;
+}
+
+export async function dvFetchETebligatlar(
+  dvSessionId: string,
+  startDate?: string,
+  endDate?: string
+): Promise<{
+  ok: boolean;
+  items?: RemoteETebligatItem[];
+  sessionExpired?: boolean;
+  portalUnavailable?: boolean;
+  error?: string;
+  staticHost?: boolean;
+}> {
+  try {
+    const res = await fetch(resolveApiUrl('/api/dv/etebligat'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dvSessionId, startDate, endDate }),
+    });
+    return parseApiJson(res, 'e-Tebligat listesi alınamadı.');
+  } catch (err: any) {
+    return { ok: false, portalUnavailable: true, error: err?.message || 'Sunucuya bağlanılamadı.' };
+  }
+}
+
+export async function dvFetchETebligatContent(payload: {
+  dvSessionId: string;
+  tebligatId: string;
+  documentNo?: string;
+  tarafId?: string;
+  tarafSecureId?: string;
+  tebligId?: string;
+  tebligSecureId?: string;
+}): Promise<DvETebligatContentResponse> {
+  try {
+    const res = await fetch(resolveApiUrl('/api/dv/etebligat-content'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return parseApiJson<DvETebligatContentResponse>(res, 'e-Tebligat PDF içeriği alınamadı.');
+  } catch (err: any) {
+    return { ok: false, portalUnavailable: true, error: err?.message || 'Sunucuya bağlanılamadı.' };
+  }
+}
+
+export async function dvFetchETebligatFile(payload: {
+  dvSessionId: string;
+  tarafId: string;
+  tarafSecureId: string;
+  id: string;
+  secureId: string;
+  belgeTip: string;
+  uzanti: string;
+  adi: string;
+}): Promise<{
+  ok: boolean;
+  base64?: string;
+  mimeType?: string;
+  fileName?: string;
+  sessionExpired?: boolean;
+  error?: string;
+}> {
+  try {
+    const res = await fetch(resolveApiUrl('/api/dv/etebligat-file'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return parseApiJson(res, 'Tebligat eki indirilemedi.');
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'Sunucuya bağlanılamadı.' };
+  }
+}
+
+export async function dvLogout(dvSessionId: string): Promise<void> {
+  await fetch(resolveApiUrl('/api/dv/logout'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dvSessionId }),
+  }).catch(() => {});
 }

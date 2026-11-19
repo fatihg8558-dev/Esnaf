@@ -566,6 +566,190 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "ReceivedInvoice": {
+      "title": "ReceivedInvoice",
+      "description": "GİB e-Arşiv Portal üzerinden çekilen adınıza düzenlenmiş (alınan) e-arşiv fatura özeti.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ettn": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "invoiceNo": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "invoiceDate": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 20
+        },
+        "invoiceType": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "sellerName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "sellerTaxId": {
+          "type": "string",
+          "maxLength": 11
+        },
+        "currency": {
+          "type": "string",
+          "enum": ["TRY", "USD", "EUR", "GBP"]
+        },
+        "exchangeRate": {
+          "type": "number"
+        },
+        "subtotal": {
+          "type": "number"
+        },
+        "vatTotal": {
+          "type": "number"
+        },
+        "grandTotal": {
+          "type": "number"
+        },
+        "approvalStatus": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "reflectedToExpense": {
+          "type": "boolean"
+        },
+        "linkedTransactionId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "linkedAccountId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerId",
+        "ettn",
+        "invoiceNo",
+        "invoiceDate",
+        "sellerName",
+        "grandTotal",
+        "reflectedToExpense",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ETebligatItem": {
+      "title": "ETebligatItem",
+      "description": "Dijital Vergi Dairesi e-Tebligat kaydı ve okundu takip durumu.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "tebligatId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "tarafId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "tarafSecureId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "tebligId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "tebligSecureId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "senderUnit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "documentNo": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "sentDate": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 20
+        },
+        "legalServedDate": {
+          "type": "string",
+          "maxLength": 20
+        },
+        "isRead": {
+          "type": "boolean"
+        },
+        "readAt": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "source": {
+          "type": "string",
+          "enum": ["live", "manual"]
+        },
+        "portalUrl": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerId",
+        "tebligatId",
+        "subject",
+        "senderUnit",
+        "sentDate",
+        "isRead",
+        "source",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -600,6 +784,14 @@
     "/checksNotes/{itemId}": {
       "schema": { "$ref": "#/entities/CheckNote" },
       "description": "Vadesi takip edilen çek ve senet kayıtları."
+    },
+    "/receivedInvoices/{docId}": {
+      "schema": { "$ref": "#/entities/ReceivedInvoice" },
+      "description": "GİB üzerinden çekilen adınıza kesilmiş (alınan) e-Arşiv faturaları."
+    },
+    "/eTebligatlar/{docId}": {
+      "schema": { "$ref": "#/entities/ETebligatItem" },
+      "description": "Dijital Vergi Dairesi e-Tebligat kutusu ve okundu takip kayıtları."
     }
   }
 }
